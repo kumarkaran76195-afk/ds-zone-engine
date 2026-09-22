@@ -66,12 +66,21 @@ async function fetchCandles(inst, tfMin, minsBack) {
   try {
     const now = Date.now(), start = now - minsBack * 60000;
     const url = `${GROWW}/charting_service/v2/chart/exchange/${inst.exchange}/segment/${inst.segment}/${inst.symbol}?startTimeInMillis=${start}&endTimeInMillis=${now}&intervalInMinutes=${tfMin}`;
-    const headers = { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' };
+    const headers = {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://groww.in/',
+      'Origin': 'https://groww.in',
+      'Accept-Language': 'en-US,en;q=0.9'
+    };
     if (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') {
       headers['Authorization'] = 'Bearer ' + API_KEY;
       headers['X-API-KEY'] = API_KEY;
     }
-    const r = await fetch(url, { headers, timeout: 10000 });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const r = await fetch(url, { headers, signal: controller.signal });
+    clearTimeout(timer);
     if (!r.ok) { console.log(`[API] ${inst.symbol} ${tfMin}m HTTP ${r.status}`); return []; }
     const d = await r.json();
     const raw = d.candles || [];

@@ -34,7 +34,7 @@ async function httpFetchAll() {
   }
   document.getElementById('dot').classList.add('on');
   document.getElementById('connTxt').textContent = wsOk ? 'Connected' : 'HTTP Mode';
-  scheduleInit();
+  if (!chartInitDone) scheduleInit();
 }
 
 function updMktBadge() {

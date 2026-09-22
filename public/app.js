@@ -2,6 +2,9 @@
 let deviceId = localStorage.getItem('dsz_did');
 if (!deviceId) { deviceId = 'DEV' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('dsz_did', deviceId); }
 
+document.getElementById('app').style.display = 'none';
+document.getElementById('regScreen').style.display = 'flex';
+
 (async function checkTrial() {
   try {
     const r = await fetch('/api/trial?deviceId=' + deviceId);
@@ -13,6 +16,7 @@ if (!deviceId) { deviceId = 'DEV' + Date.now().toString(36) + Math.random().toSt
     }
     if (!d.active) {
       document.getElementById('lockScreen').style.display = 'flex';
+      document.getElementById('regScreen').style.display = 'none';
       document.getElementById('app').style.display = 'none';
       return;
     }
@@ -23,7 +27,10 @@ if (!deviceId) { deviceId = 'DEV' + Date.now().toString(36) + Math.random().toSt
       document.getElementById('trialBar').style.display = 'block';
       document.getElementById('trialDays').textContent = d.daysLeft + ' din bache hain';
     }
-  } catch (e) { document.getElementById('app').style.display = ''; }
+  } catch (e) {
+    document.getElementById('regScreen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
 })();
 
 function registerUser() {

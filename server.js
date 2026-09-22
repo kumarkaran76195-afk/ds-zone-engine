@@ -65,6 +65,13 @@ app.get('/api/admin/activate', (req, res) => {
   res.json({ ok: true, msg: key + ' activated!' });
 });
 
+app.get('/api/admin/reset', (req, res) => {
+  const { pass } = req.query;
+  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
+  saveTrialUsers({});
+  res.json({ ok: true, msg: 'All users cleared!' });
+});
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });

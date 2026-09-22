@@ -157,8 +157,10 @@ function startPolling(sym) {
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: false }));
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: Date.now() }));
 
 app.get('/api/candles/:sym/:tf', async (req, res) => {
+  console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);
   try {
     const inst = INSTRUMENTS[req.params.sym];
     if (!inst) return res.json({ candles: [] });

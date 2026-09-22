@@ -18,21 +18,21 @@ const API_KEY = process.env.API_KEY || 'YOUR_API_KEY_HERE';
 const GROWW = process.env.API_BASE_URL || 'https://groww.in/v1/api';
 
 const INSTRUMENTS = {
-  'NIFTY':     { exchange: 'NSE', segment: 'CASH', symbol: 'NIFTY', isIndex: true },
-  'BANKNIFTY': { exchange: 'NSE', segment: 'CASH', symbol: 'BANKNIFTY', isIndex: true },
-  'SENSEX':    { exchange: 'BSE', segment: 'CASH', symbol: 'SENSEX', isIndex: true },
-  'FINNIFTY':  { exchange: 'NSE', segment: 'CASH', symbol: 'FINNIFTY', isIndex: true },
-  'RELIANCE':  { exchange: 'NSE', segment: 'CASH', symbol: 'RELIANCE', isIndex: false },
-  'TCS':       { exchange: 'NSE', segment: 'CASH', symbol: 'TCS', isIndex: false },
-  'INFY':      { exchange: 'NSE', segment: 'CASH', symbol: 'INFY', isIndex: false },
-  'HDFCBANK':  { exchange: 'NSE', segment: 'CASH', symbol: 'HDFCBANK', isIndex: false },
-  'SBIN':      { exchange: 'NSE', segment: 'CASH', symbol: 'SBIN', isIndex: false },
-  'ICICIBANK': { exchange: 'NSE', segment: 'CASH', symbol: 'ICICIBANK', isIndex: false },
-  'ADANIENT':  { exchange: 'NSE', segment: 'CASH', symbol: 'ADANIENT', isIndex: false },
-  'BAJFINANCE':{ exchange: 'NSE', segment: 'CASH', symbol: 'BAJFINANCE', isIndex: false },
-  'ITC':       { exchange: 'NSE', segment: 'CASH', symbol: 'ITC', isIndex: false },
-  'WIPRO':     { exchange: 'NSE', segment: 'CASH', symbol: 'WIPRO', isIndex: false },
-  'TATAMOTORS':{ exchange: 'NSE', segment: 'CASH', symbol: 'TATAMOTORS', isIndex: false }
+  'NIFTY':     { exchange: 'NSE', segment: 'CASH', symbol: 'NIFTY', isIndex: true, yahoo: '%5ENSEI' },
+  'BANKNIFTY': { exchange: 'NSE', segment: 'CASH', symbol: 'BANKNIFTY', isIndex: true, yahoo: '%5ENSEBANK' },
+  'SENSEX':    { exchange: 'BSE', segment: 'CASH', symbol: 'SENSEX', isIndex: true, yahoo: '%5EBSESN' },
+  'FINNIFTY':  { exchange: 'NSE', segment: 'CASH', symbol: 'FINNIFTY', isIndex: true, yahoo: 'NIFTYFIN%2ENS' },
+  'RELIANCE':  { exchange: 'NSE', segment: 'CASH', symbol: 'RELIANCE', isIndex: false, yahoo: 'RELIANCE%2ENS' },
+  'TCS':       { exchange: 'NSE', segment: 'CASH', symbol: 'TCS', isIndex: false, yahoo: 'TCS%2ENS' },
+  'INFY':      { exchange: 'NSE', segment: 'CASH', symbol: 'INFY', isIndex: false, yahoo: 'INFY%2ENS' },
+  'HDFCBANK':  { exchange: 'NSE', segment: 'CASH', symbol: 'HDFCBANK', isIndex: false, yahoo: 'HDFCBANK%2ENS' },
+  'SBIN':      { exchange: 'NSE', segment: 'CASH', symbol: 'SBIN', isIndex: false, yahoo: 'SBIN%2ENS' },
+  'ICICIBANK': { exchange: 'NSE', segment: 'CASH', symbol: 'ICICIBANK', isIndex: false, yahoo: 'ICICIBANK%2ENS' },
+  'ADANIENT':  { exchange: 'NSE', segment: 'CASH', symbol: 'ADANIENT', isIndex: false, yahoo: 'ADANIENT%2ENS' },
+  'BAJFINANCE':{ exchange: 'NSE', segment: 'CASH', symbol: 'BAJFINANCE', isIndex: false, yahoo: 'BAJFINANCE%2ENS' },
+  'ITC':       { exchange: 'NSE', segment: 'CASH', symbol: 'ITC', isIndex: false, yahoo: 'ITC%2ENS' },
+  'WIPRO':     { exchange: 'NSE', segment: 'CASH', symbol: 'WIPRO', isIndex: false, yahoo: 'WIPRO%2ENS' },
+  'TATAMOTORS':{ exchange: 'NSE', segment: 'CASH', symbol: 'TATAMOTORS', isIndex: false, yahoo: 'TATAMOTORS%2ENS' }
 };
 
 const mgrs = {};
@@ -62,6 +62,37 @@ function getMgr(sym, tf) {
   return mgrs[k];
 }
 
+async function fetchCandlesYahoo(inst, tfMin, range) {
+  try {
+    const interval = tfMin <= 1 ? '1m' : tfMin <= 5 ? '5m' : tfMin <= 15 ? '15m' : '1d';
+    const rangeMap = { '1m': '1d', '5m': '5d', '15m': '1mo', '1d': '1mo' };
+    const r = rangeMap[interval] || '5d';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${inst.yahoo}?interval=${interval}&range=${r}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: controller.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return [];
+    const d = await resp.json();
+    const result = d.chart && d.chart.result && d.chart.result[0];
+    if (!result) return [];
+    const ts = result.timestamp || [];
+    const q = result.indicators && result.indicators.quote && result.indicators.quote[0];
+    if (!q || !ts.length) return [];
+    const candles = [];
+    for (let i = 0; i < ts.length; i++) {
+      if (q.open[i] != null && q.close[i] != null) {
+        candles.push({
+          time: ts[i] * 1000,
+          open: q.open[i], high: q.high[i], low: q.low[i],
+          close: q.close[i], volume: (q.volume && q.volume[i]) || 0
+        });
+      }
+    }
+    return candles;
+  } catch (e) { console.log(`[YAHOO] ${inst.symbol} ERR: ${e.message}`); return []; }
+}
+
 async function fetchCandles(inst, tfMin, minsBack) {
   try {
     const now = Date.now(), start = now - minsBack * 60000;
@@ -81,13 +112,14 @@ async function fetchCandles(inst, tfMin, minsBack) {
     const timer = setTimeout(() => controller.abort(), 15000);
     const r = await fetch(url, { headers, signal: controller.signal });
     clearTimeout(timer);
-    if (!r.ok) { console.log(`[API] ${inst.symbol} ${tfMin}m HTTP ${r.status}`); return []; }
+    if (!r.ok) { console.log(`[GROWW] ${inst.symbol} ${tfMin}m HTTP ${r.status}, falling back to Yahoo`); return await fetchCandlesYahoo(inst, tfMin, minsBack); }
     const d = await r.json();
     const raw = d.candles || [];
+    if (!raw.length) { console.log(`[GROWW] ${inst.symbol} no candles, falling back to Yahoo`); return await fetchCandlesYahoo(inst, tfMin, minsBack); }
     return raw.map(c => ({
       time: c[0] * 1000, open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5] || 0
     }));
-  } catch (e) { console.log(`[API] ${inst.symbol} ${tfMin}m ERR: ${e.message}`); return []; }
+  } catch (e) { console.log(`[GROWW] ${inst.symbol} ERR: ${e.message}, falling back to Yahoo`); return await fetchCandlesYahoo(inst, tfMin, minsBack); }
 }
 
 function tick(sym, ltp, ts) {

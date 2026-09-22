@@ -11,14 +11,59 @@ const TRIAL_DAYS = 7;
 const TRIAL_FILE = path.join(__dirname, 'trial-users.json');
 function loadTrialUsers() { try { return JSON.parse(fs.readFileSync(TRIAL_FILE, 'utf8')); } catch (e) { return {}; } }
 function saveTrialUsers(d) { fs.writeFileSync(TRIAL_FILE, JSON.stringify(d, null, 2)); }
-function getTrialStatus(ip) {
+
+app.use(express.json());
+
+app.post('/api/register', (req, res) => {
+  const { phone, deviceId } = req.body;
   const db = loadTrialUsers();
-  if (db[ip] && db[ip].activated) return { active: true, daysLeft: -1 };
-  if (!db[ip]) { db[ip] = { start: Date.now() }; saveTrialUsers(db); }
-  const elapsed = (Date.now() - db[ip].start) / (1000 * 60 * 60 * 24);
-  if (elapsed >= TRIAL_DAYS) return { active: false, daysLeft: 0 };
-  return { active: true, daysLeft: Math.ceil(TRIAL_DAYS - elapsed) };
-}
+  for (const k of Object.keys(db)) {
+    if (db[k].phone === phone || (db[k].deviceId === deviceId && !db[k].activated)) {
+      return res.json({ ok: true, msg: 'Already registered', key: k });
+    }
+  }
+  const key = 'U' + Date.now().toString(36).toUpperCase();
+  db[key] = { phone, deviceId, start: Date.now(), activated: false };
+  saveTrialUsers(db);
+  res.json({ ok: true, key, msg: 'Registered' });
+});
+
+app.get('/api/trial', (req, res) => {
+  const deviceId = req.query.deviceId || '';
+  const db = loadTrialUsers();
+  for (const k of Object.keys(db)) {
+    const u = db[k];
+    if (u.activated) continue;
+    if (u.deviceId === deviceId) {
+      const elapsed = (Date.now() - u.start) / (1000 * 60 * 60 * 24);
+      if (elapsed >= TRIAL_DAYS) return res.json({ active: false, daysLeft: 0, key: k });
+      return res.json({ active: true, daysLeft: Math.ceil(TRIAL_DAYS - elapsed), key: k });
+    }
+  }
+  res.json({ active: true, daysLeft: TRIAL_DAYS, new: true });
+});
+
+app.get('/api/admin/users', (req, res) => {
+  const pass = req.query.pass;
+  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
+  const db = loadTrialUsers();
+  const users = Object.entries(db).map(([k, v]) => {
+    const elapsed = (Date.now() - v.start) / (1000 * 60 * 60 * 24);
+    return { key: k, phone: v.phone, start: new Date(v.start).toLocaleDateString('en-IN'), daysUsed: Math.floor(elapsed), activated: v.activated };
+  });
+  res.json({ total: users.length, users });
+});
+
+app.get('/api/admin/activate', (req, res) => {
+  const { key, pass } = req.query;
+  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
+  const db = loadTrialUsers();
+  if (!db[key]) return res.json({ error: 'User not found' });
+  db[key].activated = true;
+  db[key].activatedAt = Date.now();
+  saveTrialUsers(db);
+  res.json({ ok: true, msg: key + ' activated!' });
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -179,18 +224,7 @@ app.get('/api/trial', (req, res) => {
   res.json(status);
 });
 
-app.get('/api/activate', (req, res) => {
-  const code = req.query.code;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  if (code && code.length >= 4) {
-    const db = loadTrialUsers();
-    db[code] = { activated: true, activatedAt: Date.now() };
-    saveTrialUsers(db);
-    res.json({ ok: true, message: 'User ' + code + ' activated!' });
-  } else {
-    res.json({ ok: false, message: 'Invalid code' });
-  }
-});
+
 
 app.get('/api/candles/:sym/:tf', async (req, res) => {
   console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);

@@ -7,7 +7,8 @@ let lastSetupKey = '', livePriceLine = null, lastLTP = 0, lastTrackTime = 0;
 
 function connect() {
   try {
-    ws = new WebSocket('ws://' + location.host + '/ws');
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
     ws.onopen = () => { wsOk = true; document.getElementById('dot').classList.add('on'); document.getElementById('connTxt').textContent = 'Connected'; subAll(); };
     ws.onclose = () => { wsOk = false; document.getElementById('dot').classList.remove('on'); document.getElementById('connTxt').textContent = 'WS Offline'; chartInitDone = false; setTimeout(connect, 5000); };
     ws.onerror = () => { wsOk = false; };

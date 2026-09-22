@@ -3,8 +3,22 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const fs = require('fs');
 const fetch = require('node-fetch');
 const CandleManager = require('./candle-manager');
+
+const TRIAL_DAYS = 7;
+const TRIAL_FILE = path.join(__dirname, 'trial-users.json');
+function loadTrialUsers() { try { return JSON.parse(fs.readFileSync(TRIAL_FILE, 'utf8')); } catch (e) { return {}; } }
+function saveTrialUsers(d) { fs.writeFileSync(TRIAL_FILE, JSON.stringify(d, null, 2)); }
+function getTrialStatus(ip) {
+  const db = loadTrialUsers();
+  if (db[ip] && db[ip].activated) return { active: true, daysLeft: -1 };
+  if (!db[ip]) { db[ip] = { start: Date.now() }; saveTrialUsers(db); }
+  const elapsed = (Date.now() - db[ip].start) / (1000 * 60 * 60 * 24);
+  if (elapsed >= TRIAL_DAYS) return { active: false, daysLeft: 0 };
+  return { active: true, daysLeft: Math.ceil(TRIAL_DAYS - elapsed) };
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -158,6 +172,25 @@ app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: false 
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: Date.now() }));
+
+app.get('/api/trial', (req, res) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const status = getTrialStatus(ip);
+  res.json(status);
+});
+
+app.get('/api/activate', (req, res) => {
+  const code = req.query.code;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  if (code && code.length >= 4) {
+    const db = loadTrialUsers();
+    db[code] = { activated: true, activatedAt: Date.now() };
+    saveTrialUsers(db);
+    res.json({ ok: true, message: 'User ' + code + ' activated!' });
+  } else {
+    res.json({ ok: false, message: 'Invalid code' });
+  }
+});
 
 app.get('/api/candles/:sym/:tf', async (req, res) => {
   console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);

@@ -1,4 +1,16 @@
 /* ─── DS Zone Engine v1.0 — Frontend ──────────────────────── */
+(async function checkTrial() {
+  try {
+    const r = await fetch('/api/trial');
+    const d = await r.json();
+    if (!d.active) {
+      document.getElementById('lockScreen').style.display = 'flex';
+      throw new Error('Trial expired');
+    }
+    document.getElementById('lockScreen').style.display = 'none';
+  } catch (e) {}
+})();
+
 let ws, chart, candleS, volS, smaS;
 let zoneLines = [], labels = [];
 let sym = 'NIFTY', tf = 5, allC = {}, lastA = null, engine = new DSEngine();

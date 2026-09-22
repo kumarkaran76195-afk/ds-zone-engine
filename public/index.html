@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DS Zone Engine | Live Trading</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="hdr-l">
+      <div class="logo" style="display:none">DS ZONE ENGINE</div>
+      <div class="conn"><div class="dot" id="dot"></div><span id="connTxt">Connecting...</span></div>
+      <div class="mkt-status" id="mktStatus" style="display:none;background:#ff4757;color:#fff;font-size:10px;padding:2px 8px;border-radius:4px;margin-left:8px;font-weight:600">MARKET CLOSED</div>
+    </div>
+    <div class="hdr-c">
+      <select id="symSel">
+        <option value="NIFTY">NIFTY 50</option>
+        <option value="BANKNIFTY">BANKNIFTY</option>
+        <option value="SENSEX">SENSEX</option>
+        <option value="FINNIFTY">FINNIFTY</option>
+        <option value="RELIANCE">RELIANCE</option>
+        <option value="TCS">TCS</option>
+        <option value="INFY">INFY</option>
+        <option value="HDFCBANK">HDFC BANK</option>
+        <option value="SBIN">SBI</option>
+        <option value="ICICIBANK">ICICI BANK</option>
+        <option value="ADANIENT">ADANI ENT</option>
+        <option value="BAJFINANCE">BAJ FIN</option>
+        <option value="ITC">ITC</option>
+        <option value="WIPRO">WIPRO</option>
+        <option value="TATAMOTORS">TATA MOTORS</option>
+      </select>
+      <div class="tf-tabs" id="tfTabs"></div>
+      <div class="ltp"><span class="ltp-sym" id="ltpSym">NIFTY</span><span class="ltp-val" id="ltpVal">--</span></div>
+    </div>
+    <div class="hdr-r">
+      <div class="risk-ctrl">
+        <label>CAPITAL</label><input type="number" id="riskCap" value="100000" min="1000" step="10000">
+        <label>RISK</label><select id="riskPct"><option value="1" selected>1%</option><option value="1.5">1.5%</option><option value="2">2%</option></select>
+        <button onclick="applyRisk()">SET</button>
+      </div>
+      <span class="clock" id="clock">--</span>
+    </div>
+  </header>
+  <div class="main">
+    <div class="chart-area">
+      <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY — NO BUY/SELL RECOMMENDATION — LEARNING KARO TRADE MAT KARO</div>
+      <div id="chart"></div>
+      <div class="labels" id="labels"></div>
+    </div>
+    <div class="panel" id="panel">
+      <div class="p-head"><span id="pTitle">SCANNING</span><span class="badge" id="pBadge">--</span></div>
+      <div id="debugInfo" style="background:#111;color:#0f0;font:11px monospace;padding:4px 8px;word-break:break-all;min-height:16px"></div>
+      <div class="p-body">
+        <div class="no-setup" id="noSetup">
+          <div class="ns-icon">&#9678;</div>
+          <div class="ns-txt">NO VALID SETUP</div>
+          <div class="ns-sub">Waiting for valid zone structure</div>
+        </div>
+        <div class="setup" id="setupInfo" style="display:none">
+          <div class="dir" id="dirBadge"><span class="dir-icon" id="dirIcon"></span><span id="dirTxt">--</span></div>
+          <div class="zi-grid">
+            <div class="zi"><span class="zi-l">PATTERN</span><span class="zi-v" id="sPat">--</span></div>
+            <div class="zi"><span class="zi-l">ZONE TYPE</span><span class="zi-v" id="sZType">--</span></div>
+            <div class="zi"><span class="zi-l">TIMEFRAME</span><span class="zi-v" id="sZTF">--</span></div>
+          </div>
+          <div class="trade-box">
+            <div class="trade-box-title">TRADE SETUP</div>
+            <div class="trade-row entry-row"><div class="trade-icon">&#9650;</div><div class="trade-info"><span class="trade-label">ENTRY</span><span class="trade-price" id="sEntry">--</span></div></div>
+            <div class="trade-row sl-row"><div class="trade-icon">&#9660;</div><div class="trade-info"><span class="trade-label">STOP LOSS</span><span class="trade-price" id="sSL">--</span></div></div>
+            <div class="trade-row tgt-row"><div class="trade-icon">&#9670;</div><div class="trade-info"><span class="trade-label">TARGET (2R)</span><span class="trade-price" id="sTgt">--</span></div></div>
+          </div>
+          <div class="m-row">
+            <div class="m"><span class="m-l">R:R</span><span class="m-v" id="sRR">--</span></div>
+            <div class="m"><span class="m-l">SCORE</span><span class="m-v sc" id="sScore">--</span></div>
+            <div class="m"><span class="m-l">ENTRY TYPE</span><span class="m-v" id="sET">--</span></div>
+          </div>
+          <div class="m-row">
+            <div class="m"><span class="m-l">STRENGTH</span><span class="m-v" id="sStr">--</span></div>
+            <div class="m"><span class="m-l">FRESHNESS</span><span class="m-v" id="sFr">--</span></div>
+            <div class="m"><span class="m-l">DISTANCE</span><span class="m-v" id="sDist">--</span></div>
+          </div>
+          <div class="zl">
+            <div class="zlr"><span class="zl-l">PROXIMAL</span><span class="zl-v" id="sProx">--</span></div>
+            <div class="zlr"><span class="zl-l">DISTAL</span><span class="zl-v" id="sDistal">--</span></div>
+          </div>
+          <div class="s-bar"><span class="s-lbl">STATUS</span><span class="s-val" id="sStatus">--</span></div>
+          <div class="tf-sum" id="tfSum" style="font-size:11px;color:#888;margin-top:6px;letter-spacing:0.5px"></div>
+          <div class="risk-box">
+            <div class="rb-title">RISK MANAGEMENT</div>
+            <div class="rb-grid">
+              <div class="rb"><span class="rb-l">Risk %</span><span class="rb-v" id="rPct">1%</span></div>
+              <div class="rb"><span class="rb-l">Risk Amt</span><span class="rb-v" id="rAmt">--</span></div>
+              <div class="rb"><span class="rb-l">Quantity</span><span class="rb-v" id="rQty">--</span></div>
+              <div class="rb"><span class="rb-l">Risk/Unit</span><span class="rb-v" id="rRPU">--</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="p-foot">
+        <div class="tf-section">
+          <div class="tf-title">MULTI-TIMEFRAME TREND</div>
+          <div class="tf-grid" id="tfGrid"></div>
+        </div>
+        <div class="sum-row">
+          <div class="si"><span class="si-l">TREND</span><span class="si-v" id="sumTrend">--</span></div>
+          <div class="si"><span class="si-l">SMA50</span><span class="si-v" id="sumSma">--</span></div>
+        </div>
+        <div class="tf-zones" id="tfZones" style="margin-top:8px"></div>
+        <div class="completed-section" id="completedSection" style="margin-top:8px;max-height:180px;overflow-y:auto"></div>
+        <div class="history-section" id="historySection" style="margin-top:8px;max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="indicator.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

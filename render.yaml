@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ds-zone-engine
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: API_KEY
+        sync: false
+      - key: API_BASE_URL
+        value: https://groww.in/v1/api

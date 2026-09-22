@@ -12,8 +12,6 @@ const TRIAL_FILE = path.join(__dirname, 'trial-users.json');
 function loadTrialUsers() { try { return JSON.parse(fs.readFileSync(TRIAL_FILE, 'utf8')); } catch (e) { return {}; } }
 function saveTrialUsers(d) { fs.writeFileSync(TRIAL_FILE, JSON.stringify(d, null, 2)); }
 
-app.use(express.json());
-
 app.post('/api/register', (req, res) => {
   const { phone, deviceId } = req.body;
   const db = loadTrialUsers();
@@ -73,6 +71,7 @@ app.get('/api/admin/reset', (req, res) => {
 });
 
 const app = express();
+app.use(express.json());
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 const PORT = process.env.PORT || 3000;

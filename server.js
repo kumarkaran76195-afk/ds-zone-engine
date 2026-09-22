@@ -166,25 +166,37 @@ app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
 
 app.post('/api/register', (req, res) => {
   const { phone, deviceId } = req.body;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  const cleanPhone = (phone || '').replace(/\D/g, '');
+  if (cleanPhone.length !== 10 || /^[0-9]{10}$/.test(cleanPhone) === false) {
+    return res.json({ ok: false, msg: 'Sahi 10 digit phone number daalo' });
+  }
   const db = loadTrialUsers();
   for (const k of Object.keys(db)) {
-    if (db[k].phone === phone || (db[k].deviceId === deviceId && !db[k].activated)) {
+    if (db[k].phone === cleanPhone) {
+      return res.json({ ok: true, msg: 'Already registered', key: k });
+    }
+    if (db[k].deviceId === deviceId && !db[k].activated) {
+      return res.json({ ok: true, msg: 'Already registered', key: k });
+    }
+    if (db[k].ip === ip && !db[k].activated) {
       return res.json({ ok: true, msg: 'Already registered', key: k });
     }
   }
   const key = 'U' + Date.now().toString(36).toUpperCase();
-  db[key] = { phone, deviceId, start: Date.now(), activated: false };
+  db[key] = { phone: cleanPhone, deviceId, ip, start: Date.now(), activated: false };
   saveTrialUsers(db);
   res.json({ ok: true, key, msg: 'Registered' });
 });
 
 app.get('/api/trial', (req, res) => {
   const deviceId = req.query.deviceId || '';
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
   const db = loadTrialUsers();
   for (const k of Object.keys(db)) {
     const u = db[k];
     if (u.activated) continue;
-    if (u.deviceId === deviceId) {
+    if (u.deviceId === deviceId || u.ip === ip) {
       const elapsed = (Date.now() - u.start) / (1000 * 60 * 60 * 24);
       if (elapsed >= TRIAL_DAYS) return res.json({ active: false, daysLeft: 0, key: k });
       return res.json({ active: true, daysLeft: Math.ceil(TRIAL_DAYS - elapsed), key: k });

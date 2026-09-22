@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DS Zone - Admin</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a0a; color:#fff; font-family:system-ui; padding:20px; }
+h1 { color:#00ff88; margin-bottom:20px; font-size:20px; }
+.pass-box { max-width:400px; margin:100px auto; text-align:center; }
+.pass-box input { width:100%; padding:14px; border-radius:8px; border:1px solid #333; background:#111; color:#fff; font-size:16px; text-align:center; margin-bottom:12px; }
+.pass-box button { width:100%; padding:14px; border:none; border-radius:8px; background:#00ff88; color:#000; font-size:16px; font-weight:bold; cursor:pointer; }
+.card { background:#111; border:1px solid #333; border-radius:10px; padding:16px; margin-bottom:10px; }
+.card .row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.card .phone { color:#00ff88; font-size:18px; font-weight:bold; }
+.card .key { color:#666; font-size:12px; }
+.card .meta { color:#999; font-size:12px; margin-top:8px; }
+.card .meta span { margin-right:16px; }
+.badge-active { background:#00ff88; color:#000; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:bold; }
+.badge-trial { background:#ff6b35; color:#fff; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:bold; }
+.badge-expired { background:#ff4757; color:#fff; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:bold; }
+.btn-activate { background:#00ff88; color:#000; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; }
+.btn-activate:hover { background:#00cc6a; }
+.btn-activate:disabled { background:#333; color:#666; cursor:default; }
+.summary { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.summary div { background:#111; border:1px solid #333; border-radius:8px; padding:12px 20px; text-align:center; }
+.summary .num { font-size:24px; font-weight:bold; color:#00ff88; }
+.summary .lbl { font-size:11px; color:#666; margin-top:4px; }
+.empty { color:#666; text-align:center; margin-top:40px; }
+#refreshBtn { background:#1a1a1a; color:#fff; border:1px solid #333; padding:8px 16px; border-radius:6px; cursor:pointer; margin-bottom:20px; }
+</style>
+</head>
+<body>
+<div class="pass-box" id="loginBox">
+  <h1>DS ZONE ENGINE - ADMIN</h1>
+  <p style="color:#666;margin-bottom:20px">Password daalo</p>
+  <input type="password" id="passInput" placeholder="Password">
+  <button onclick="login()">LOGIN</button>
+</div>
+<div id="dashboard" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+    <h1>DS ZONE ENGINE - ADMIN</h1>
+    <button id="refreshBtn" onclick="loadUsers()">Refresh</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div id="userList"></div>
+</div>
+<script>
+let pass = '';
+function login() {
+  pass = document.getElementById('passInput').value;
+  document.getElementById('loginBox').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  loadUsers();
+}
+async function loadUsers() {
+  const r = await fetch('/api/admin/users?pass=' + pass);
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  document.getElementById('summary').innerHTML =
+    '<div><div class="num">' + d.total + '</div><div class="lbl">TOTAL USERS</div></div>' +
+    '<div><div class="num">' + d.users.filter(u => u.activated).length + '</div><div class="lbl">ACTIVE</div></div>' +
+    '<div><div class="num">' + d.users.filter(u => !u.activated && u.daysUsed < 7).length + '</div><div class="lbl">TRIAL</div></div>' +
+    '<div><div class="num">' + d.users.filter(u => !u.activated && u.daysUsed >= 7).length + '</div><div class="lbl">EXPIRED</div></div>';
+  let html = '';
+  d.users.sort((a,b) => b.daysUsed - a.daysUsed).forEach(u => {
+    let badge = u.activated ? '<span class="badge-active">ACTIVE</span>' :
+                u.daysUsed >= 7 ? '<span class="badge-expired">EXPIRED</span>' :
+                '<span class="badge-trial">TRIAL (' + (7 - u.daysUsed) + 'd left)</span>';
+    let btn = u.activated ? '<button class="btn-activate" disabled>ACTIVATED</button>' :
+              '<button class="btn-activate" onclick="activate(\'' + u.key + '\')">ACTIVATE ₹499</button>';
+    html += '<div class="card"><div class="row"><div><div class="phone">' + (u.phone || 'No phone') + '</div><div class="key">' + u.key + '</div></div>' + btn + '</div><div class="meta"><span>Joined: ' + u.start + '</span><span>Used: ' + u.daysUsed + ' days</span>' + badge + '</div></div>';
+  });
+  document.getElementById('userList').innerHTML = html || '<div class="empty">Koi user nahi hai abhi</div>';
+}
+async function activate(key) {
+  if (!confirm('Isko activate karna hai?')) return;
+  const r = await fetch('/api/admin/activate?key=' + key + '&pass=' + pass);
+  const d = await r.json();
+  alert(d.ok ? d.msg : d.error);
+  loadUsers();
+}
+</script>
+</body>
+</html>

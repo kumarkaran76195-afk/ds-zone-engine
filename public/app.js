@@ -10,11 +10,11 @@ function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + location.host + '/ws');
     ws.onopen = () => { wsOk = true; document.getElementById('dot').classList.add('on'); document.getElementById('connTxt').textContent = 'Connected'; subAll(); };
-    ws.onclose = () => { wsOk = false; document.getElementById('dot').classList.remove('on'); document.getElementById('connTxt').textContent = 'WS Offline'; chartInitDone = false; setTimeout(connect, 5000); };
+    ws.onclose = () => { wsOk = false; document.getElementById('dot').classList.remove('on'); document.getElementById('connTxt').textContent = 'HTTP Mode'; setTimeout(connect, 10000); };
     ws.onerror = () => { wsOk = false; };
     ws.onmessage = e => { try { msg(JSON.parse(e.data)); } catch (err) {} };
   } catch (e) { wsOk = false; }
-  setTimeout(() => { if (!wsOk) httpFetchAll(); }, 5000);
+  setTimeout(() => { if (!wsOk) httpFetchAll(); }, 3000);
 }
 
 function subAll() {
@@ -335,6 +335,7 @@ document.getElementById('symSel').addEventListener('change', function() {
 
 setInterval(() => {
   try {
+    if (!wsOk) httpFetchAll();
     const a = runAnalysis();
     const debugEl = document.getElementById('debugInfo');
     if (debugEl) { let s = '3m:' + (allC[sym+'_3']||[]).length + ' chart:' + (chartInitDone?'OK':'NO'); if(a) s += ' | ' + a.status + (a.activeSetup ? ' E:' + a.activeSetup.entry.toFixed(1) + ' ' + a.activeSetup.status : '') + (a.reason ? ' ' + a.reason : ''); debugEl.textContent = s; }

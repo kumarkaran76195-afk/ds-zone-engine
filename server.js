@@ -166,9 +166,8 @@ app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
 
 app.post('/api/register', (req, res) => {
   const { phone, deviceId } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
   const cleanPhone = (phone || '').replace(/\D/g, '');
-  if (cleanPhone.length !== 10 || /^[0-9]{10}$/.test(cleanPhone) === false) {
+  if (cleanPhone.length !== 10) {
     return res.json({ ok: false, msg: 'Sahi 10 digit phone number daalo' });
   }
   const db = loadTrialUsers();
@@ -176,15 +175,12 @@ app.post('/api/register', (req, res) => {
     if (db[k].phone === cleanPhone) {
       return res.json({ ok: true, msg: 'Already registered', key: k });
     }
-    if (db[k].deviceId === deviceId && !db[k].activated) {
-      return res.json({ ok: true, msg: 'Already registered', key: k });
-    }
-    if (db[k].ip === ip && !db[k].activated) {
+    if (db[k].deviceId === deviceId) {
       return res.json({ ok: true, msg: 'Already registered', key: k });
     }
   }
   const key = 'U' + Date.now().toString(36).toUpperCase();
-  db[key] = { phone: cleanPhone, deviceId, ip, start: Date.now(), activated: false };
+  db[key] = { phone: cleanPhone, deviceId, start: Date.now(), activated: false };
   saveTrialUsers(db);
   res.json({ ok: true, key, msg: 'Registered' });
 });

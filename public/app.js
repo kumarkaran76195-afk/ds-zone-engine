@@ -130,6 +130,7 @@ function updTick(d) {
   document.getElementById('clock').textContent = new Date(d.ts).toLocaleTimeString('en-IN');
   lastLTP = d.ltp;
   if (livePriceLine && chartInitDone) { try { livePriceLine.update({ time: Math.floor(d.ts / 1000), value: d.ltp }); } catch(e) {} }
+  if (candleS && chartInitDone) labels.forEach(l => { const cls = l.className.match(/elbl|slbl|tlbl|plbl/); if (cls) { const p = parseFloat(l.textContent.match(/[\d.]+/)); if (p) { const y = candleS.priceScale().priceToCoordinate(p); if (y != null) l.style.transform = 'translateY(' + Math.round(y - 12) + 'px)'; } } });
   const now = Date.now();
   if (now - lastTrackTime >= 1000) {
     lastTrackTime = now;
@@ -311,6 +312,10 @@ function addLbl(p,col,txt,cls) {
   const el = document.createElement('div'); el.className = 'cl ' + cls;
   el.innerHTML = '<span class="cd"></span>' + txt;
   document.getElementById('labels').appendChild(el); labels.push(el);
+  if (candleS && chartInitDone) {
+    const y = candleS.priceScale().priceToCoordinate(p);
+    if (y != null) el.style.transform = 'translateY(' + Math.round(y - 12) + 'px)';
+  }
 }
 
 function clearAllOverlays() {

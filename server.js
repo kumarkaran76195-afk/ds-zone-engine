@@ -7,11 +7,6 @@ const fs = require('fs');
 const fetch = require('node-fetch');
 const CandleManager = require('./candle-manager');
 
-const TRIAL_DAYS = 7;
-const TRIAL_FILE = path.join(__dirname, 'trial-users.json');
-function loadTrialUsers() { try { return JSON.parse(fs.readFileSync(TRIAL_FILE, 'utf8')); } catch (e) { return {}; } }
-function saveTrialUsers(d) { fs.writeFileSync(TRIAL_FILE, JSON.stringify(d, null, 2)); }
-
 const app = express();
 app.use(express.json());
 const server = http.createServer(app);
@@ -163,72 +158,6 @@ app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: Date.now() }));
 app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
-
-app.post('/api/register', (req, res) => {
-  const { phone, deviceId } = req.body;
-  const cleanPhone = (phone || '').replace(/\D/g, '');
-  if (cleanPhone.length !== 10) {
-    return res.json({ ok: false, msg: 'Sahi 10 digit phone number daalo' });
-  }
-  const db = loadTrialUsers();
-  for (const k of Object.keys(db)) {
-    if (db[k].phone === cleanPhone) {
-      return res.json({ ok: true, msg: 'Already registered', key: k });
-    }
-    if (db[k].deviceId === deviceId) {
-      return res.json({ ok: true, msg: 'Already registered', key: k });
-    }
-  }
-  const key = 'U' + Date.now().toString(36).toUpperCase();
-  db[key] = { phone: cleanPhone, deviceId, start: Date.now(), activated: false };
-  saveTrialUsers(db);
-  res.json({ ok: true, key, msg: 'Registered' });
-});
-
-app.get('/api/trial', (req, res) => {
-  const deviceId = req.query.deviceId || '';
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-  const db = loadTrialUsers();
-  for (const k of Object.keys(db)) {
-    const u = db[k];
-    if (u.activated) continue;
-    if (u.deviceId === deviceId || u.ip === ip) {
-      const elapsed = (Date.now() - u.start) / (1000 * 60 * 60 * 24);
-      if (elapsed >= TRIAL_DAYS) return res.json({ active: false, daysLeft: 0, key: k });
-      return res.json({ active: true, daysLeft: Math.ceil(TRIAL_DAYS - elapsed), key: k });
-    }
-  }
-  res.json({ active: true, daysLeft: TRIAL_DAYS, new: true });
-});
-
-app.get('/api/admin/users', (req, res) => {
-  const pass = req.query.pass;
-  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
-  const db = loadTrialUsers();
-  const users = Object.entries(db).map(([k, v]) => {
-    const elapsed = (Date.now() - v.start) / (1000 * 60 * 60 * 24);
-    return { key: k, phone: v.phone, start: new Date(v.start).toLocaleDateString('en-IN'), daysUsed: Math.floor(elapsed), activated: v.activated };
-  });
-  res.json({ total: users.length, users });
-});
-
-app.get('/api/admin/activate', (req, res) => {
-  const { key, pass } = req.query;
-  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
-  const db = loadTrialUsers();
-  if (!db[key]) return res.json({ error: 'User not found' });
-  db[key].activated = true;
-  db[key].activatedAt = Date.now();
-  saveTrialUsers(db);
-  res.json({ ok: true, msg: key + ' activated!' });
-});
-
-app.get('/api/admin/reset', (req, res) => {
-  const { pass } = req.query;
-  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
-  saveTrialUsers({});
-  res.json({ ok: true, msg: 'All users cleared!' });
-});
 
 app.get('/api/candles/:sym/:tf', async (req, res) => {
   console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);

@@ -213,7 +213,7 @@ class DSEngine {
   _findNearbyZones(cls, price, currentAtr, trend, maxAtrDist) {
     const zones = ZoneEngine.detect(cls);
     ZoneEngine.markFreshness(zones, cls);
-    const valid = zones.filter(z => z.fresh || z.tested <= 2);
+    const valid = zones.filter(z => z.fresh || z.tested === 1);
     if (!valid.length) return [];
 
     const trendDir = trend ? trend.trend : 'sideways';

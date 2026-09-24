@@ -1,4 +1,53 @@
 /* ─── DS Zone Engine v1.0 — Frontend ──────────────────────── */
+let deviceId = localStorage.getItem('dsz_did');
+if (!deviceId) { deviceId = 'DEV' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('dsz_did', deviceId); }
+
+document.getElementById('app').style.display = 'none';
+document.getElementById('emailScreen').style.display = 'flex';
+
+(async function checkTrial() {
+  try {
+    const r = await fetch('/api/trial?deviceId=' + deviceId);
+    const d = await r.json();
+    if (d.pendingOTP) {
+      document.getElementById('emailScreen').style.display = 'none';
+      document.getElementById('otpScreen').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+      return;
+    }
+    if (!d.active) {
+      document.getElementById('lockScreen').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+      return;
+    }
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('emailScreen').style.display = 'none';
+    document.getElementById('otpScreen').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    if (d.daysLeft > 0 && d.daysLeft <= 3) {
+      document.getElementById('trialBar').style.display = 'block';
+      document.getElementById('trialDays').textContent = d.daysLeft + ' din bache hain';
+    }
+  } catch (e) {
+    document.getElementById('emailScreen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+})();
+
+function sendOTP() {
+  const email = document.getElementById('emailInput').value.trim();
+  if (!email.endsWith('@gmail.com')) { alert('Sirf Gmail daalo (@gmail.com)'); return; }
+  fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, deviceId }) })
+    .then(r => r.json()).then(d => { if (d.ok) { alert('OTP bheja gaya Gmail pe!'); document.getElementById('emailScreen').style.display = 'none'; document.getElementById('otpScreen').style.display = 'flex'; } else alert(d.msg); });
+}
+
+function verifyOTP() {
+  const otp = document.getElementById('otpInput').value.trim();
+  if (otp.length !== 6) { alert('6 digit OTP daalo'); return; }
+  fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp, deviceId }) })
+    .then(r => r.json()).then(d => { if (d.ok) { document.getElementById('otpScreen').style.display = 'none'; document.getElementById('app').style.display = ''; } else alert(d.msg); });
+}
+
 let ws, chart, candleS, volS, smaS;
 let zoneLines = [], labels = [];
 let sym = 'NIFTY', tf = 5, allC = {}, lastA = null, engine = new DSEngine();

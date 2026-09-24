@@ -92,7 +92,8 @@ function subAll() {
   ws.send(JSON.stringify({ action: 'subscribe', symbol: sym, interval: tf }));
 }
 
-async function httpFetchAll() {
+function httpFetchAll() {
+  debugLog('httpFetchAll started');
   const tfs = [1,3,5,15,30];
   for (const t of tfs) {
     try {
@@ -134,6 +135,12 @@ function msg(d) {
   else if (d.type === 'marketStatus') { mktOpen = d.open; updMktBadge(); }
 }
 
+function debugLog(msg) {
+  const el = document.getElementById('debugInfo');
+  if (el) { el.textContent += '\n' + new Date().toLocaleTimeString() + ': ' + msg; el.scrollTop = el.scrollHeight; }
+  console.log(msg);
+}
+
 function scheduleInit() {
   if (pendingInit) return;
   pendingInit = true;
@@ -158,13 +165,14 @@ function tryInitChart() {
     return;
   }
   const candles = allC[sym + '_' + tf];
-  if (!candles || candles.length < 3) return;
+  debugLog('tryInitChart: candles=' + (candles ? candles.length : 0) + ', tf=' + tf + ', LightweightCharts=' + (typeof LightweightCharts !== 'undefined'));
+  if (!candles || candles.length < 3) { debugLog('Not enough candles'); return; }
   const el = document.getElementById('chart');
-  if (!el || el.clientWidth < 10) return;
+  if (!el || el.clientWidth < 10) { debugLog('Chart element not ready'); return; }
   if (chart) { try { chart.remove(); } catch(e){} chart = null; candleS = volS = smaS = null; }
 
   if (typeof LightweightCharts === 'undefined') {
-    console.warn('LightweightCharts not loaded, retrying...');
+    debugLog('LightweightCharts not loaded, retrying...');
     setTimeout(tryInitChart, 500);
     return;
   }
@@ -185,9 +193,10 @@ function tryInitChart() {
     setChartData(candles);
     chart.timeScale().fitContent();
     chartInitDone = true;
+    debugLog('Chart initialized OK!');
     new ResizeObserver(() => { if (chart && el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }).observe(el);
   } catch (e) {
-    console.error('Chart init failed:', e);
+    debugLog('Chart init failed: ' + e.message);
     setTimeout(tryInitChart, 1000);
   }
 }

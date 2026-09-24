@@ -24,6 +24,8 @@ document.getElementById('emailScreen').style.display = 'flex';
     document.getElementById('emailScreen').style.display = 'none';
     document.getElementById('otpScreen').style.display = 'none';
     document.getElementById('app').style.display = '';
+    connect();
+    httpFetchAll();
     if (d.daysLeft > 0 && d.daysLeft <= 3) {
       document.getElementById('trialBar').style.display = 'block';
       document.getElementById('trialDays').textContent = d.daysLeft + ' din bache hain';
@@ -45,7 +47,7 @@ function verifyOTP() {
   const otp = document.getElementById('otpInput').value.trim();
   if (otp.length !== 6) { alert('6 digit OTP daalo'); return; }
   fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp, deviceId }) })
-    .then(r => r.json()).then(d => { if (d.ok) { document.getElementById('otpScreen').style.display = 'none'; document.getElementById('app').style.display = ''; } else alert(d.msg); });
+    .then(r => r.json()).then(d => { if (d.ok) { document.getElementById('otpScreen').style.display = 'none'; document.getElementById('app').style.display = ''; connect(); httpFetchAll(); } else alert(d.msg); });
 }
 
 let ws, chart, candleS, volS, smaS;

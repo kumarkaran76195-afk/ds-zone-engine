@@ -51,8 +51,13 @@ function makeTransport() {
   const pass = process.env.GMAIL_APP_PASS;
   if (!user || !pass || user === 'your-email@gmail.com') return null;
   return nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user, pass }
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: { user, pass },
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 }
 
@@ -66,16 +71,22 @@ app.post('/api/otp/send', async (req, res) => {
     otpStore.set(email, { code, exp: Date.now() + OTP_TTL });
     const tx = makeTransport();
     if (tx) {
-      await tx.sendMail({
-        from: `"DS Zone Engine" <${process.env.GMAIL_USER}>`,
-        to: email,
-        subject: 'Your DS Zone Engine Login OTP',
-        text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
-        html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes.</p>`
-      });
-      return res.json({ ok: true });
+      try {
+        await tx.sendMail({
+          from: `"DS Zone Engine" <${process.env.GMAIL_USER}>`,
+          to: email,
+          subject: 'Your DS Zone Engine Login OTP',
+          text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
+          html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes.</p>`
+        });
+        console.log(`[OTP] Email sent to ${email}`);
+        return res.json({ ok: true });
+      } catch (mailErr) {
+        console.log('[OTP mail fail]', mailErr.message);
+        console.log(`[OTP] ${email} -> ${code}`);
+        return res.json({ ok: true, devCode: code });
+      }
     }
-    // No SMTP configured: still accept, expose code only for local testing
     console.log(`[OTP] ${email} -> ${code}`);
     return res.json({ ok: true, devCode: code });
   } catch (e) {

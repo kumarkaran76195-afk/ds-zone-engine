@@ -13,10 +13,16 @@ const TRIAL_FILE = path.join(__dirname, 'trial-users.json');
 function loadTrialUsers() { try { return JSON.parse(fs.readFileSync(TRIAL_FILE, 'utf8')); } catch (e) { return {}; } }
 function saveTrialUsers(d) { fs.writeFileSync(TRIAL_FILE, JSON.stringify(d, null, 2)); }
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.GMAIL_USER || 'your-email@gmail.com', pass: process.env.GMAIL_APP_PASS || 'your-app-password' }
-});
+const hasGmailCreds = process.env.GMAIL_USER && process.env.GMAIL_APP_PASS && 
+  process.env.GMAIL_USER !== 'your-email@gmail.com' && process.env.GMAIL_APP_PASS !== 'your-app-password';
+
+let transporter = null;
+if (hasGmailCreds) {
+  transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS }
+  });
+}
 
 function generateOTP() { return Math.floor(100000 + Math.random() * 900000).toString(); }
 function isGmail(email) { return email && email.toLowerCase().endsWith('@gmail.com'); }
@@ -175,16 +181,23 @@ app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
 
 app.post('/api/otp/send', async (req, res) => {
   const { email, deviceId } = req.body;
-  if (!isGmail(email)) return res.json({ ok: false, msg: 'Sirf Gmail accept hoga (temp mail nahi)' });
   if (!deviceId) return res.json({ ok: false, msg: 'Device ID chahiye' });
+  if (!isGmail(email)) return res.json({ ok: false, msg: 'Sirf Gmail accept hoga (temp mail nahi)' });
+  
+  if (!hasGmailCreds || !transporter) {
+    const db = loadTrialUsers();
+    db[deviceId] = { email, trialStart: Date.now(), activated: false };
+    saveTrialUsers(db);
+    return res.json({ ok: true, msg: 'Trial shuru (Gmail config nahi)', autoStart: true });
+  }
+  
   const otp = generateOTP();
   const db = loadTrialUsers();
   db[deviceId] = { email, otp, otpExpires: Date.now() + 300000, trialStart: null, activated: false };
   saveTrialUsers(db);
   try {
     await transporter.sendMail({
-      from: process.env.GMAIL_USER || 'your-email@gmail.com',
-      to: email,
+      from: process.env.GMAIL_USER, to: email,
       subject: 'DS Zone Engine - OTP Verification',
       text: `Aapka OTP: ${otp}. Ye 5 minute valid hai.`
     });
@@ -195,7 +208,15 @@ app.post('/api/otp/send', async (req, res) => {
 app.post('/api/otp/verify', (req, res) => {
   const { otp, deviceId } = req.body;
   const db = loadTrialUsers();
-  if (!db[deviceId] || db[deviceId].otp !== otp) return res.json({ ok: false, msg: 'Galat OTP' });
+  if (!db[deviceId]) return res.json({ ok: false, msg: 'Invalid device' });
+  
+  if (!hasGmailCreds || !db[deviceId].otp) {
+    db[deviceId].trialStart = Date.now(); db[deviceId].otp = null; db[deviceId].otpExpires = null;
+    saveTrialUsers(db);
+    return res.json({ ok: true, msg: 'Verified! 7 din free trial shuru' });
+  }
+  
+  if (db[deviceId].otp !== otp) return res.json({ ok: false, msg: 'Galat OTP' });
   if (Date.now() > db[deviceId].otpExpires) return res.json({ ok: false, msg: 'OTP expire ho gaya' });
   db[deviceId].trialStart = Date.now(); db[deviceId].otp = null; db[deviceId].otpExpires = null;
   saveTrialUsers(db);

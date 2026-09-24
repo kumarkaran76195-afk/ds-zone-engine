@@ -4,6 +4,85 @@ let zoneLines = [], labels = [];
 let sym = 'NIFTY', tf = 5, allC = {}, lastA = null, engine = new DSEngine();
 let mktOpen = false, wsOk = false, chartInitDone = false, pendingInit = false;
 let lastSetupKey = '', livePriceLine = null, lastLTP = 0, lastTrackTime = 0;
+let authed = false;
+
+function isLocalHost() {
+  return location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '';
+}
+
+function showLogin() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+function hideLogin() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  authed = true;
+}
+
+function loginErr(m) { document.getElementById('loginErr').textContent = m || ''; }
+
+async function initAuth() {
+  if (isLocalHost()) { hideLogin(); startApp(); return; }
+  const token = localStorage.getItem('ds_token');
+  if (token) {
+    try {
+      const r = await fetch('/api/otp/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+      const d = await r.json();
+      if (d.ok) { hideLogin(); startApp(); return; }
+      localStorage.removeItem('ds_token');
+    } catch (e) {}
+  }
+  showLogin();
+  document.getElementById('btnSendOtp').onclick = async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    loginErr('');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { loginErr('Valid email daalo'); return; }
+    const btn = document.getElementById('btnSendOtp');
+    btn.disabled = true; btn.textContent = 'SENDING...';
+    try {
+      const r = await fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const d = await r.json();
+      if (d.ok) {
+        document.getElementById('loginStep1').style.display = 'none';
+        document.getElementById('loginStep2').style.display = 'flex';
+        document.getElementById('otpSentMsg').textContent = d.devCode ? 'OTP: ' + d.devCode + ' (dev mode)' : 'OTP sent to ' + email;
+        document.getElementById('loginOtp').focus();
+      } else loginErr(d.error || 'Failed to send OTP');
+    } catch (e) { loginErr('Network error'); }
+    btn.disabled = false; btn.textContent = 'SEND OTP';
+  };
+  document.getElementById('btnVerifyOtp').onclick = async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const otp = document.getElementById('loginOtp').value.trim();
+    loginErr('');
+    if (otp.length !== 6) { loginErr('6-digit OTP daalo'); return; }
+    const btn = document.getElementById('btnVerifyOtp');
+    btn.disabled = true; btn.textContent = 'VERIFYING...';
+    try {
+      const r = await fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp }) });
+      const d = await r.json();
+      if (d.ok) {
+        localStorage.setItem('ds_token', d.token);
+        hideLogin();
+        startApp();
+      } else loginErr(d.error || 'Wrong OTP');
+    } catch (e) { loginErr('Network error'); }
+    btn.disabled = false; btn.textContent = 'VERIFY & OPEN';
+  };
+  document.getElementById('btnResendOtp').onclick = () => {
+    document.getElementById('loginStep2').style.display = 'none';
+    document.getElementById('loginStep1').style.display = 'flex';
+    loginErr('');
+    document.getElementById('btnSendOtp').click();
+  };
+}
+
+function startApp() {
+  connect();
+  httpFetchAll();
+}
 
 function connect() {
   try {
@@ -372,6 +451,7 @@ document.getElementById('symSel').addEventListener('change', function() {
 
 setInterval(() => {
   try {
+    if (!authed) return;
     if (!wsOk) httpFetchAll();
     const a = runAnalysis();
     const debugEl = document.getElementById('debugInfo');
@@ -379,5 +459,4 @@ setInterval(() => {
     if (a) updAnalysis(a);
   } catch (err) {}
 }, 5000);
-connect();
-httpFetchAll();
+initAuth();

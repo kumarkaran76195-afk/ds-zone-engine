@@ -8,6 +8,24 @@
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
+<div id="loginScreen" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">DS ZONE ENGINE</div>
+    <div class="login-sub">Email verify karke market open karo</div>
+    <div id="loginStep1">
+      <input type="email" id="loginEmail" placeholder="Enter your email" autocomplete="email">
+      <button id="btnSendOtp">SEND OTP</button>
+    </div>
+    <div id="loginStep2" style="display:none">
+      <div class="otp-sent" id="otpSentMsg">OTP sent to your email</div>
+      <input type="text" id="loginOtp" placeholder="Enter 6-digit OTP" maxlength="6" inputmode="numeric">
+      <button id="btnVerifyOtp">VERIFY &amp; OPEN</button>
+      <button class="link-btn" id="btnResendOtp">Resend OTP</button>
+    </div>
+    <div class="login-err" id="loginErr"></div>
+    <div class="login-foot">Market se pehle login zaroori hai</div>
+  </div>
+</div>
 <div id="app">
   <header>
     <div class="hdr-l">
@@ -47,7 +65,7 @@
   </header>
   <div class="main">
     <div class="chart-area">
-      <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY — NO BUY/SELL RECOMMENDATION — LEARNING KARO TRADE MAT KARO</div>
+      <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY â€” NO BUY/SELL RECOMMENDATION â€” LEARNING KARO TRADE MAT KARO</div>
       <div id="chart" style="position:absolute;top:28px;left:0;right:0;bottom:0"></div>
       <div class="labels" id="labels" style="top:34px"></div>
     </div>
@@ -116,7 +134,7 @@
     </div>
   </div>
 </div>
-<script src="indicator.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="indicator.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

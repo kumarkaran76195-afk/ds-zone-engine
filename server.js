@@ -3,7 +3,9 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const crypto = require('crypto');
 const fetch = require('node-fetch');
+const nodemailer = require('nodemailer');
 const CandleManager = require('./candle-manager');
 
 const app = express();
@@ -37,6 +39,77 @@ const mgrs = {};
 const pollers = {};
 const prices = {};
 const clients = new Set();
+
+// ── Email OTP Login (APK/Railway only) ──
+const otpStore = new Map();   // email -> { code, exp }
+const sessions = new Map();   // token -> { email, exp }
+const OTP_TTL = 5 * 60 * 1000;
+const SESSION_TTL = 24 * 60 * 60 * 1000;
+
+function makeTransport() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASS;
+  if (!user || !pass || user === 'your-email@gmail.com') return null;
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass }
+  });
+}
+
+app.post('/api/otp/send', async (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ ok: false, error: 'Invalid email' });
+    }
+    const code = String(crypto.randomInt(100000, 1000000));
+    otpStore.set(email, { code, exp: Date.now() + OTP_TTL });
+    const tx = makeTransport();
+    if (tx) {
+      await tx.sendMail({
+        from: `"DS Zone Engine" <${process.env.GMAIL_USER}>`,
+        to: email,
+        subject: 'Your DS Zone Engine Login OTP',
+        text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
+        html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes.</p>`
+      });
+      return res.json({ ok: true });
+    }
+    // No SMTP configured: still accept, expose code only for local testing
+    console.log(`[OTP] ${email} -> ${code}`);
+    return res.json({ ok: true, devCode: code });
+  } catch (e) {
+    console.log('[OTP send error]', e.message);
+    return res.status(500).json({ ok: false, error: 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/otp/verify', (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const code = String(req.body.otp || '').trim();
+  const rec = otpStore.get(email);
+  if (!rec || rec.exp < Date.now()) {
+    otpStore.delete(email);
+    return res.status(400).json({ ok: false, error: 'OTP expired, request a new one' });
+  }
+  if (rec.code !== code) {
+    return res.status(400).json({ ok: false, error: 'Wrong OTP' });
+  }
+  otpStore.delete(email);
+  const token = crypto.randomBytes(24).toString('hex');
+  sessions.set(token, { email, exp: Date.now() + SESSION_TTL });
+  res.json({ ok: true, token });
+});
+
+app.post('/api/otp/session', (req, res) => {
+  const token = String(req.body.token || '');
+  const s = sessions.get(token);
+  if (!s || s.exp < Date.now()) {
+    sessions.delete(token);
+    return res.json({ ok: false });
+  }
+  res.json({ ok: true, email: s.email });
+});
 
 function getIST() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));

@@ -28,8 +28,8 @@ select:focus{outline:none;border-color:#00D09C}
 .risk-ctrl button:hover{background:#00D09C;color:#fff}
 .clock{font-size:10px;color:#444;font-family:monospace}
 .main{display:flex;flex:1;overflow:hidden}
-.chart-area{flex:1;position:relative;min-width:0}
-#chart{width:100%;height:100%}
+.chart-area{flex:1;position:relative;min-width:0;min-height:400px;height:auto}
+#chart{width:100%;height:100%;min-height:400px}
 .labels{position:absolute;top:6px;left:6px;display:flex;flex-direction:column;gap:3px;pointer-events:none;z-index:5}
 .cl{font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:0.5px;display:flex;align-items:center;gap:5px}
 .cl .cd{width:6px;height:2px;border-radius:1px}

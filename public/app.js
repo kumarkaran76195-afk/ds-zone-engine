@@ -168,7 +168,14 @@ function tryInitChart() {
   debugLog('tryInitChart: candles=' + (candles ? candles.length : 0) + ', tf=' + tf + ', LightweightCharts=' + (typeof LightweightCharts !== 'undefined'));
   if (!candles || candles.length < 3) { debugLog('Not enough candles'); return; }
   const el = document.getElementById('chart');
-  if (!el || el.clientWidth < 10) { debugLog('Chart element not ready'); return; }
+  if (!el) { debugLog('Chart element not found'); return; }
+  const w = el.clientWidth, h = el.clientHeight;
+  if (w < 10 || h < 10) { 
+    debugLog('Chart element no size: ' + w + 'x' + h + ', forcing 400px');
+    el.style.minHeight = '400px';
+    setTimeout(tryInitChart, 100);
+    return;
+  }
   if (chart) { try { chart.remove(); } catch(e){} chart = null; candleS = volS = smaS = null; }
 
   if (typeof LightweightCharts === 'undefined') {
@@ -179,7 +186,7 @@ function tryInitChart() {
 
   try {
     chart = LightweightCharts.createChart(el, {
-      width: el.clientWidth, height: el.clientHeight || 400,
+      width: el.clientWidth, height: el.clientHeight,
       layout: { background: { type: 'solid', color: '#0a0a0f' }, textColor: '#d1d4dc' },
       grid: { vertLines: { color: '#14141e' }, horzLines: { color: '#14141e' } },
       crosshair: { mode: 0 },
@@ -193,7 +200,7 @@ function tryInitChart() {
     setChartData(candles);
     chart.timeScale().fitContent();
     chartInitDone = true;
-    debugLog('Chart initialized OK!');
+    debugLog('Chart initialized OK! ' + w + 'x' + h);
     new ResizeObserver(() => { if (chart && el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }).observe(el);
   } catch (e) {
     debugLog('Chart init failed: ' + e.message);

@@ -1,0 +1,35 @@
+{
+  "name": "DS Zone Engine",
+  "short_name": "DS Zone",
+  "description": "Live Demand Supply Zone Trading Engine",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#00D09C",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-192.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Open NIFTY",
+      "short_name": "NIFTY",
+      "description": "Open NIFTY analysis",
+      "url": "/?sym=NIFTY",
+      "icons": [{ "src": "icon-192.svg", "sizes": "192x192" }]
+    }
+  ]
+}

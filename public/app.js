@@ -163,22 +163,33 @@ function tryInitChart() {
   if (!el || el.clientWidth < 10) return;
   if (chart) { try { chart.remove(); } catch(e){} chart = null; candleS = volS = smaS = null; }
 
-  chart = LightweightCharts.createChart(el, {
-    width: el.clientWidth, height: el.clientHeight || 400,
-    layout: { background: { type: 'solid', color: '#0a0a0f' }, textColor: '#d1d4dc' },
-    grid: { vertLines: { color: '#14141e' }, horzLines: { color: '#14141e' } },
-    crosshair: { mode: 0 },
-    rightPriceScale: { borderColor: '#1e1e2a', scaleMargins: { top: 0.1, bottom: 0.1 } },
-    timeScale: { borderColor: '#1e1e2a', timeVisible: true, secondsVisible: false }
-  });
-  candleS = chart.addCandlestickSeries({ upColor: '#00D09C', downColor: '#ff4757', borderDownColor: '#ff4757', borderUpColor: '#00D09C', wickDownColor: '#ff4757', wickUpColor: '#00D09C' });
-  volS = chart.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: 'vol', scaleMargins: { top: 0.85, bottom: 0 } });
-  smaS = chart.addLineSeries({ color: '#9b59b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  if (typeof LightweightCharts === 'undefined') {
+    console.warn('LightweightCharts not loaded, retrying...');
+    setTimeout(tryInitChart, 500);
+    return;
+  }
 
-  setChartData(candles);
-  chart.timeScale().fitContent();
-  chartInitDone = true;
-  new ResizeObserver(() => { if (chart && el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }).observe(el);
+  try {
+    chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth, height: el.clientHeight || 400,
+      layout: { background: { type: 'solid', color: '#0a0a0f' }, textColor: '#d1d4dc' },
+      grid: { vertLines: { color: '#14141e' }, horzLines: { color: '#14141e' } },
+      crosshair: { mode: 0 },
+      rightPriceScale: { borderColor: '#1e1e2a', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale: { borderColor: '#1e1e2a', timeVisible: true, secondsVisible: false }
+    });
+    candleS = chart.addCandlestickSeries({ upColor: '#00D09C', downColor: '#ff4757', borderDownColor: '#ff4757', borderUpColor: '#00D09C', wickDownColor: '#ff4757', wickUpColor: '#00D09C' });
+    volS = chart.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: 'vol', scaleMargins: { top: 0.85, bottom: 0 } });
+    smaS = chart.addLineSeries({ color: '#9b59b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+
+    setChartData(candles);
+    chart.timeScale().fitContent();
+    chartInitDone = true;
+    new ResizeObserver(() => { if (chart && el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }).observe(el);
+  } catch (e) {
+    console.error('Chart init failed:', e);
+    setTimeout(tryInitChart, 1000);
+  }
 }
 
 function setChartData(candles) {

@@ -52,8 +52,8 @@ function makeTransport() {
   if (!user || !pass || user === 'your-email@gmail.com') return null;
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
     auth: { user, pass },
     connectionTimeout: 15000,
     greetingTimeout: 10000,

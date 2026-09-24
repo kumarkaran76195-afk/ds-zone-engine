@@ -46,19 +46,57 @@ const sessions = new Map();   // token -> { email, exp }
 const OTP_TTL = 5 * 60 * 1000;
 const SESSION_TTL = 24 * 60 * 60 * 1000;
 
-function makeTransport() {
+async function sendOtpMail(to, code) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
+    try {
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'DS Zone Engine <onboarding@resend.dev>',
+          to: [to],
+          subject: 'Your DS Zone Engine Login OTP',
+          text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
+          html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes. Do not share it.</p>`
+        })
+      });
+      if (r.ok) {
+        console.log(`[OTP] Resend sent to ${to}`);
+        return true;
+      }
+      const errText = await r.text();
+      console.log(`[OTP Resend fail] HTTP ${r.status}: ${errText}`);
+    } catch (e) {
+      console.log('[OTP Resend fail]', e.message);
+    }
+  }
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASS;
-  if (!user || !pass || user === 'your-email@gmail.com') return null;
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-    connectionTimeout: 15000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
-  });
+  if (user && pass && user !== 'your-email@gmail.com') {
+    try {
+      const tx = nodemailer.createTransport({
+        host: 'smtp.gmail.com', port: 465, secure: true,
+        auth: { user, pass },
+        connectionTimeout: 15000, greetingTimeout: 10000, socketTimeout: 15000
+      });
+      await tx.sendMail({
+        from: `"DS Zone Engine" <${user}>`,
+        to,
+        subject: 'Your DS Zone Engine Login OTP',
+        text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
+        html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes.</p>`
+      });
+      console.log(`[OTP] SMTP sent to ${to}`);
+      return true;
+    } catch (e) {
+      console.log('[OTP SMTP fail]', e.message);
+    }
+  }
+  return false;
 }
 
 app.post('/api/otp/send', async (req, res) => {
@@ -69,24 +107,8 @@ app.post('/api/otp/send', async (req, res) => {
     }
     const code = String(crypto.randomInt(100000, 1000000));
     otpStore.set(email, { code, exp: Date.now() + OTP_TTL });
-    const tx = makeTransport();
-    if (tx) {
-      try {
-        await tx.sendMail({
-          from: `"DS Zone Engine" <${process.env.GMAIL_USER}>`,
-          to: email,
-          subject: 'Your DS Zone Engine Login OTP',
-          text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
-          html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes.</p>`
-        });
-        console.log(`[OTP] Email sent to ${email}`);
-        return res.json({ ok: true });
-      } catch (mailErr) {
-        console.log('[OTP mail fail]', mailErr.message);
-        console.log(`[OTP] ${email} -> ${code}`);
-        return res.json({ ok: true, devCode: code });
-      }
-    }
+    const sent = await sendOtpMail(email, code);
+    if (sent) return res.json({ ok: true });
     console.log(`[OTP] ${email} -> ${code}`);
     return res.json({ ok: true, devCode: code });
   } catch (e) {

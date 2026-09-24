@@ -40,7 +40,20 @@ function sendOTP() {
   const email = document.getElementById('emailInput').value.trim();
   if (!email.endsWith('@gmail.com')) { alert('Sirf Gmail daalo (@gmail.com)'); return; }
   fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, deviceId }) })
-    .then(r => r.json()).then(d => { if (d.ok) { alert('OTP bheja gaya Gmail pe!'); document.getElementById('emailScreen').style.display = 'none'; document.getElementById('otpScreen').style.display = 'flex'; } else alert(d.msg); });
+    .then(r => r.json()).then(d => { 
+      if (d.ok) {
+        if (d.autoStart) {
+          document.getElementById('emailScreen').style.display = 'none';
+          document.getElementById('app').style.display = '';
+          connect();
+          httpFetchAll();
+        } else {
+          alert('OTP bheja gaya Gmail pe!');
+          document.getElementById('emailScreen').style.display = 'none';
+          document.getElementById('otpScreen').style.display = 'flex';
+        }
+      } else alert(d.msg);
+    });
 }
 
 function verifyOTP() {

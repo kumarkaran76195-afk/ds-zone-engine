@@ -2,75 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#00D09C">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="DS Zone Engine">
-<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="styles.css">
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-<script>
-(function() {
-  var cdnLoaded = window.LightweightCharts;
-  if (!cdnLoaded) {
-    var s = document.createElement('script');
-    s.src = 'lightweight-charts.standalone.production.js';
-    document.head.appendChild(s);
-  }
-})();
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').then(reg => {
-      console.log('SW registered:', reg.scope);
-    }).catch(err => console.log('SW registration failed:', err));
-  });
-}
-</script>
+<script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-<div id="emailScreen" style="display:none;position:fixed;inset:0;background:#0a0a0a;z-index:9999;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:20px">
-  <div style="font-size:48px;margin-bottom:16px">📧</div>
-  <h2 style="color:#fff;font-size:22px;margin:0 0 8px">DS ZONE ENGINE</h2>
-  <p style="color:#999;font-size:14px;margin:0 0 20px">7 din FREE trial ke liye Gmail daalo</p>
-  <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:20px;width:100%;max-width:320px">
-    <input type="email" id="emailInput" placeholder="your@gmail.com" style="width:100%;padding:12px;border-radius:8px;border:1px solid #444;background:#0a0a0a;color:#fff;font-size:16px;text-align:center;margin-bottom:12px;box-sizing:border-box">
-    <button onclick="sendOTP()" style="width:100%;padding:12px;border-radius:8px;border:none;background:#00ff88;color:#000;font-size:16px;font-weight:bold;cursor:pointer">SEND OTP</button>
-  </div>
-</div>
-<div id="otpScreen" style="display:none;position:fixed;inset:0;background:#0a0a0a;z-index:9999;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:20px">
-  <div style="font-size:48px;margin-bottom:16px">🔐</div>
-  <h2 style="color:#fff;font-size:22px;margin:0 0 8px">OTP DAALO</h2>
-  <p style="color:#999;font-size:14px;margin:0 0 20px">Gmail pe 6-digit OTP aaya hai</p>
-  <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:20px;width:100%;max-width:320px">
-    <input type="text" id="otpInput" placeholder="123456" maxlength="6" style="width:100%;padding:12px;border-radius:8px;border:1px solid #444;background:#0a0a0a;color:#fff;font-size:24px;text-align:center;letter-spacing:8px;margin-bottom:12px;box-sizing:border-box">
-    <button onclick="verifyOTP()" style="width:100%;padding:12px;border-radius:8px;border:none;background:#00ff88;color:#000;font-size:16px;font-weight:bold;cursor:pointer">VERIFY & START TRIAL</button>
-  </div>
-</div>
-<div id="lockScreen" style="display:none;position:fixed;inset:0;background:#0a0a0a;z-index:9999;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:20px">
-  <div style="font-size:48px;margin-bottom:16px">🔒</div>
-  <h2 style="color:#fff;font-size:22px;margin:0 0 8px">TRIAL KHATAM!</h2>
-  <p style="color:#999;font-size:14px;margin:0 0 4px">Aapka 7-day free trial khatam ho gaya hai.</p>
-  <p style="color:#999;font-size:14px;margin:0 0 20px">Lifetime access ke liye WhatsApp karo:</p>
-  <div style="background:#1a1a1a;border:1px solid #333;border-radius:12px;padding:20px;width:100%;max-width:320px">
-    <div style="color:#00ff88;font-size:28px;font-weight:bold;margin-bottom:8px">&#8377;499</div>
-    <div style="color:#666;font-size:12px;margin-bottom:16px">LIFETIME ACCESS</div>
-    <div style="color:#fff;font-size:13px;line-height:1.8;margin-bottom:16px">
-      <div>&#10003; NIFTY, BANKNIFTY, SENSEX</div>
-      <div>&#10003; All Stocks Support</div>
-      <div>&#10003; Multi-Timeframe Analysis</div>
-      <div>&#10003; Trend-Based Zones</div>
-      <div>&#10003; Risk Management</div>
-    </div>
-    <a href="https://wa.me/916239883897?text=Hi%2C%20I%20want%20DS%20Zone%20Engine%20lifetime%20access%20for%20%C2%B9499" target="_blank" style="display:block;padding:14px;border-radius:8px;background:#25D366;color:#fff;font-size:16px;font-weight:bold;text-decoration:none;text-align:center">&#128172; WhatsApp: 6239883897</a>
-  </div>
-  <div style="color:#666;font-size:11px;margin-top:20px">Payment ke baad access turant khulega</div>
-</div>
-<div id="trialBar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:100;background:#1a1a1a;border-bottom:1px solid #333;padding:4px 12px;font-size:11px;color:#666;text-align:center">
-  FREE TRIAL: <span id="trialDays" style="color:#00ff88;font-weight:bold"></span> | WhatsApp: 6239883897 for Lifetime &#8377;499
-</div>
+<div id="app">
   <header>
     <div class="hdr-l">
       <div class="logo" style="display:none">DS ZONE ENGINE</div>
@@ -110,8 +48,8 @@ if ('serviceWorker' in navigator) {
   <div class="main">
     <div class="chart-area">
       <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY — NO BUY/SELL RECOMMENDATION — LEARNING KARO TRADE MAT KARO</div>
-      <div id="chart"></div>
-      <div class="labels" id="labels"></div>
+      <div id="chart" style="position:absolute;top:28px;left:0;right:0;bottom:0"></div>
+      <div class="labels" id="labels" style="top:34px"></div>
     </div>
     <div class="panel" id="panel">
       <div class="p-head"><span id="pTitle">SCANNING</span><span class="badge" id="pBadge">--</span></div>
@@ -178,7 +116,7 @@ if ('serviceWorker' in navigator) {
     </div>
   </div>
 </div>
-<script src="indicator.js?v=2"></script>
-<script src="app.js?v=2"></script>
+<script src="indicator.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

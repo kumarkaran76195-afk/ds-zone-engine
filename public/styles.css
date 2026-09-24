@@ -29,7 +29,7 @@ select:focus{outline:none;border-color:#00D09C}
 .clock{font-size:10px;color:#444;font-family:monospace}
 .main{display:flex;flex:1;overflow:hidden}
 .chart-area{flex:1;position:relative;min-width:0;min-height:400px;height:auto}
-#chart{width:100%;height:100%;min-height:400px}
+#chart{width:100%;height:100%}
 .labels{position:absolute;top:6px;left:6px;display:flex;flex-direction:column;gap:3px;pointer-events:none;z-index:5}
 .cl{font-size:9px;font-weight:700;padding:2px 6px;border-radius:2px;letter-spacing:0.5px;display:flex;align-items:center;gap:5px}
 .cl .cd{width:6px;height:2px;border-radius:1px}
@@ -106,3 +106,23 @@ select:focus{outline:none;border-color:#00D09C}
 .si-v.up{color:#00D09C}.si-v.dn{color:#ff4757}.si-v.fl{color:#555}
 .completed-section{background:#111119;border:1px solid #1a1a28;border-radius:3px;padding:6px 8px}
 .completed-section::-webkit-scrollbar{width:3px}.completed-section::-webkit-scrollbar-track{background:#111119}.completed-section::-webkit-scrollbar-thumb{background:#252535;border-radius:2px}
+
+@media (max-width:800px){
+  body{overflow:auto}
+  #app{height:auto;min-height:100vh}
+  header{flex-wrap:wrap;gap:6px;padding:6px 8px}
+  .hdr-l,.hdr-c,.hdr-r{width:100%;justify-content:space-between;flex-wrap:wrap;gap:6px}
+  .hdr-r .risk-ctrl{display:none}
+  .clock{display:none}
+  .logo{display:none!important}
+  .main{flex-direction:column;overflow:visible}
+  .chart-area{min-height:320px;height:55vh;flex:none}
+  #chart{min-height:320px}
+  .panel{width:100%;min-width:0;border-left:none;border-top:1px solid #1a1a28;overflow:visible}
+  .p-body{padding:8px}
+  .p-foot{position:static}
+  .trade-price{font-size:18px}
+  .tf-tab{padding:6px 12px;font-size:12px}
+  select{font-size:13px;padding:6px 8px}
+  .ltp-val{font-size:15px}
+}

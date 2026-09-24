@@ -3,29 +3,8 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const fs = require('fs');
 const fetch = require('node-fetch');
-const nodemailer = require('nodemailer');
 const CandleManager = require('./candle-manager');
-
-const TRIAL_DAYS = 7;
-const TRIAL_FILE = path.join(__dirname, 'trial-users.json');
-function loadTrialUsers() { try { return JSON.parse(fs.readFileSync(TRIAL_FILE, 'utf8')); } catch (e) { return {}; } }
-function saveTrialUsers(d) { fs.writeFileSync(TRIAL_FILE, JSON.stringify(d, null, 2)); }
-
-const hasGmailCreds = process.env.GMAIL_USER && process.env.GMAIL_APP_PASS && 
-  process.env.GMAIL_USER !== 'your-email@gmail.com' && process.env.GMAIL_APP_PASS !== 'your-app-password';
-
-let transporter = null;
-if (hasGmailCreds) {
-  transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASS }
-  });
-}
-
-function generateOTP() { return Math.floor(100000 + Math.random() * 900000).toString(); }
-function isGmail(email) { return email && email.toLowerCase().endsWith('@gmail.com'); }
 
 const app = express();
 app.use(express.json());
@@ -178,86 +157,6 @@ app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: Date.now() }));
 app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
-
-app.post('/api/otp/send', async (req, res) => {
-  const { email, deviceId } = req.body;
-  if (!deviceId) return res.json({ ok: false, msg: 'Device ID chahiye' });
-  if (!isGmail(email)) return res.json({ ok: false, msg: 'Sirf Gmail accept hoga (temp mail nahi)' });
-  
-  if (!hasGmailCreds || !transporter) {
-    const db = loadTrialUsers();
-    db[deviceId] = { email, trialStart: Date.now(), activated: false };
-    saveTrialUsers(db);
-    return res.json({ ok: true, msg: 'Trial shuru (Gmail config nahi)', autoStart: true });
-  }
-  
-  const otp = generateOTP();
-  const db = loadTrialUsers();
-  db[deviceId] = { email, otp, otpExpires: Date.now() + 300000, trialStart: null, activated: false };
-  saveTrialUsers(db);
-  try {
-    await transporter.sendMail({
-      from: process.env.GMAIL_USER, to: email,
-      subject: 'DS Zone Engine - OTP Verification',
-      text: `Aapka OTP: ${otp}. Ye 5 minute valid hai.`
-    });
-    res.json({ ok: true, msg: 'OTP bheja gaya Gmail pe' });
-  } catch (e) { res.json({ ok: false, msg: 'Email bhejne mein error' }); }
-});
-
-app.post('/api/otp/verify', (req, res) => {
-  const { otp, deviceId } = req.body;
-  const db = loadTrialUsers();
-  if (!db[deviceId]) return res.json({ ok: false, msg: 'Invalid device' });
-  
-  if (!hasGmailCreds || !db[deviceId].otp) {
-    db[deviceId].trialStart = Date.now(); db[deviceId].otp = null; db[deviceId].otpExpires = null;
-    saveTrialUsers(db);
-    return res.json({ ok: true, msg: 'Verified! 7 din free trial shuru' });
-  }
-  
-  if (db[deviceId].otp !== otp) return res.json({ ok: false, msg: 'Galat OTP' });
-  if (Date.now() > db[deviceId].otpExpires) return res.json({ ok: false, msg: 'OTP expire ho gaya' });
-  db[deviceId].trialStart = Date.now(); db[deviceId].otp = null; db[deviceId].otpExpires = null;
-  saveTrialUsers(db);
-  res.json({ ok: true, msg: 'Verified! 7 din free trial shuru' });
-});
-
-app.get('/api/trial', (req, res) => {
-  const deviceId = req.query.deviceId;
-  if (!deviceId) return res.json({ active: false, daysLeft: 0 });
-  const db = loadTrialUsers();
-  if (!db[deviceId]) return res.json({ active: true, daysLeft: TRIAL_DAYS, new: true });
-  if (db[deviceId].activated) return res.json({ active: true, daysLeft: -1 });
-  if (db[deviceId].trialStart) {
-    const elapsed = (Date.now() - db[deviceId].trialStart) / 86400000;
-    if (elapsed >= TRIAL_DAYS) return res.json({ active: false, daysLeft: 0 });
-    return res.json({ active: true, daysLeft: Math.ceil(TRIAL_DAYS - elapsed) });
-  }
-  if (db[deviceId].otp) return res.json({ active: true, daysLeft: TRIAL_DAYS, pendingOTP: true });
-  res.json({ active: true, daysLeft: TRIAL_DAYS, new: true });
-});
-
-app.get('/api/admin/activate', (req, res) => {
-  const { deviceId, pass } = req.query;
-  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
-  const db = loadTrialUsers();
-  if (!db[deviceId]) return res.json({ error: 'User not found' });
-  db[deviceId].activated = true; db[deviceId].activatedAt = Date.now();
-  saveTrialUsers(db);
-  res.json({ ok: true, msg: deviceId + ' activated!' });
-});
-
-app.get('/api/admin/users', (req, res) => {
-  const pass = req.query.pass;
-  if (pass !== 'dszone2026') return res.json({ error: 'Wrong password' });
-  const db = loadTrialUsers();
-  const users = Object.entries(db).map(([k, v]) => ({
-    deviceId: k, email: v.email, trialStart: v.trialStart ? new Date(v.trialStart).toLocaleDateString('en-IN') : null,
-    daysUsed: v.trialStart ? Math.floor((Date.now() - v.trialStart) / 86400000) : null, activated: v.activated
-  }));
-  res.json({ total: users.length, users });
-});
 
 app.get('/api/candles/:sym/:tf', async (req, res) => {
   console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);

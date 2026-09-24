@@ -1,74 +1,4 @@
 /* ─── DS Zone Engine v1.0 — Frontend ──────────────────────── */
-let deviceId = localStorage.getItem('dsz_did');
-if (!deviceId) { deviceId = 'DEV' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('dsz_did', deviceId); }
-
-document.getElementById('app').style.display = 'none';
-document.getElementById('emailScreen').style.display = 'flex';
-
-(async function checkTrial() {
-  try {
-    const r = await fetch('/api/trial?deviceId=' + deviceId);
-    const d = await r.json();
-    if (d.pendingOTP) {
-      document.getElementById('emailScreen').style.display = 'none';
-      document.getElementById('otpScreen').style.display = 'flex';
-      document.getElementById('app').style.display = 'none';
-      return;
-    }
-    if (!d.active) {
-      document.getElementById('lockScreen').style.display = 'flex';
-      document.getElementById('app').style.display = 'none';
-      return;
-    }
-    // Active trial (new or existing) - load market
-    document.getElementById('lockScreen').style.display = 'none';
-    document.getElementById('emailScreen').style.display = 'none';
-    document.getElementById('otpScreen').style.display = 'none';
-    document.getElementById('app').style.display = '';
-    connect();
-    httpFetchAll();
-    if (d.daysLeft > 0 && d.daysLeft <= 3) {
-      document.getElementById('trialBar').style.display = 'block';
-      document.getElementById('trialDays').textContent = d.daysLeft + ' din bache hain';
-    }
-  } catch (e) {
-    // Fallback: try to load market anyway
-    document.getElementById('emailScreen').style.display = 'none';
-    document.getElementById('otpScreen').style.display = 'none';
-    document.getElementById('lockScreen').style.display = 'none';
-    document.getElementById('app').style.display = '';
-    connect();
-    httpFetchAll();
-  }
-})();
-
-function sendOTP() {
-  const email = document.getElementById('emailInput').value.trim();
-  if (!email.endsWith('@gmail.com')) { alert('Sirf Gmail daalo (@gmail.com)'); return; }
-  fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, deviceId }) })
-    .then(r => r.json()).then(d => { 
-      if (d.ok) {
-        if (d.autoStart) {
-          document.getElementById('emailScreen').style.display = 'none';
-          document.getElementById('app').style.display = '';
-          connect();
-          httpFetchAll();
-        } else {
-          alert('OTP bheja gaya Gmail pe!');
-          document.getElementById('emailScreen').style.display = 'none';
-          document.getElementById('otpScreen').style.display = 'flex';
-        }
-      } else alert(d.msg);
-    });
-}
-
-function verifyOTP() {
-  const otp = document.getElementById('otpInput').value.trim();
-  if (otp.length !== 6) { alert('6 digit OTP daalo'); return; }
-  fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp, deviceId }) })
-    .then(r => r.json()).then(d => { if (d.ok) { document.getElementById('otpScreen').style.display = 'none'; document.getElementById('app').style.display = ''; connect(); httpFetchAll(); } else alert(d.msg); });
-}
-
 let ws, chart, candleS, volS, smaS;
 let zoneLines = [], labels = [];
 let sym = 'NIFTY', tf = 5, allC = {}, lastA = null, engine = new DSEngine();
@@ -92,7 +22,7 @@ function subAll() {
   ws.send(JSON.stringify({ action: 'subscribe', symbol: sym, interval: tf }));
 }
 
-function httpFetchAll() {
+async function httpFetchAll() {
   debugLog('httpFetchAll started');
   const tfs = [1,3,5,15,30];
   for (const t of tfs) {
@@ -198,9 +128,14 @@ function tryInitChart() {
     smaS = chart.addLineSeries({ color: '#9b59b6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
 
     setChartData(candles);
-    chart.timeScale().fitContent();
+    const ts = chart.timeScale();
+    if (candles.length > 80) {
+      ts.setVisibleLogicalRange({ from: Math.max(0, candles.length - 80), to: candles.length + 5 });
+    } else {
+      ts.fitContent();
+    }
     chartInitDone = true;
-    debugLog('Chart initialized OK! ' + w + 'x' + h);
+    debugLog('Chart initialized OK! ' + w + 'x' + h + ' candles=' + candles.length);
     new ResizeObserver(() => { if (chart && el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }).observe(el);
   } catch (e) {
     debugLog('Chart init failed: ' + e.message);
@@ -445,3 +380,4 @@ setInterval(() => {
   } catch (err) {}
 }, 5000);
 connect();
+httpFetchAll();

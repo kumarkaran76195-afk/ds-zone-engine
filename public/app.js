@@ -20,6 +20,7 @@ document.getElementById('emailScreen').style.display = 'flex';
       document.getElementById('app').style.display = 'none';
       return;
     }
+    // Active trial (new or existing) - load market
     document.getElementById('lockScreen').style.display = 'none';
     document.getElementById('emailScreen').style.display = 'none';
     document.getElementById('otpScreen').style.display = 'none';
@@ -31,8 +32,13 @@ document.getElementById('emailScreen').style.display = 'flex';
       document.getElementById('trialDays').textContent = d.daysLeft + ' din bache hain';
     }
   } catch (e) {
-    document.getElementById('emailScreen').style.display = 'flex';
-    document.getElementById('app').style.display = 'none';
+    // Fallback: try to load market anyway
+    document.getElementById('emailScreen').style.display = 'none';
+    document.getElementById('otpScreen').style.display = 'none';
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    connect();
+    httpFetchAll();
   }
 })();
 

@@ -48,80 +48,34 @@ const SESSION_TTL = 24 * 60 * 60 * 1000;
 
 async function sendOtpMail(to, code) {
   const brevoKey = process.env.BREVO_API_KEY;
-  if (brevoKey) {
-    try {
-      const r = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'api-key': brevoKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          sender: { name: 'DS Zone Engine', email: process.env.BREVO_SENDER || 'karanahuja623988@gmail.com' },
-          to: [{ email: to }],
-          subject: 'Your DS Zone Engine Login OTP',
-          textContent: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
-          htmlContent: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes. Do not share it.</p>`
-        })
-      });
-      if (r.ok) {
-        console.log(`[OTP] Brevo sent to ${to}`);
-        return true;
-      }
-      const errText = await r.text();
-      console.log(`[OTP Brevo fail] HTTP ${r.status}: ${errText}`);
-    } catch (e) {
-      console.log('[OTP Brevo fail]', e.message);
-    }
-  }
-  const resendKey = process.env.RESEND_API_KEY;
-  if (resendKey) {
-    try {
-      const r = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'DS Zone Engine <onboarding@resend.dev>',
-          to: [to],
-          subject: 'Your DS Zone Engine Login OTP',
-          text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
-          html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes. Do not share it.</p>`
-        })
-      });
-      if (r.ok) {
-        console.log(`[OTP] Resend sent to ${to}`);
-        return true;
-      }
-      const errText = await r.text();
-      console.log(`[OTP Resend fail] HTTP ${r.status}: ${errText}`);
-    } catch (e) {
-      console.log('[OTP Resend fail]', e.message);
-    }
-  }
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASS;
-  if (user && pass && user !== 'your-email@gmail.com') {
-    try {
-      const tx = nodemailer.createTransport({
-        host: 'smtp.gmail.com', port: 465, secure: true,
-        auth: { user, pass },
-        connectionTimeout: 15000, greetingTimeout: 10000, socketTimeout: 15000
-      });
-      await tx.sendMail({
-        from: `"DS Zone Engine" <${user}>`,
-        to,
+  if (!brevoKey) return false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': brevoKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: 'DS Zone Engine', email: process.env.BREVO_SENDER || 'karanahuja623988@gmail.com' },
+        to: [{ email: to }],
         subject: 'Your DS Zone Engine Login OTP',
-        text: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
-        html: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes.</p>`
-      });
-      console.log(`[OTP] SMTP sent to ${to}`);
+        textContent: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
+        htmlContent: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes. Do not share it.</p>`
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (r.ok) {
+      console.log(`[OTP] Brevo sent to ${to}`);
       return true;
-    } catch (e) {
-      console.log('[OTP SMTP fail]', e.message);
     }
+    const errText = await r.text();
+    console.log(`[OTP Brevo fail] HTTP ${r.status}: ${errText}`);
+  } catch (e) {
+    console.log('[OTP Brevo fail]', e.message);
   }
   return false;
 }
@@ -136,8 +90,8 @@ app.post('/api/otp/send', async (req, res) => {
     otpStore.set(email, { code, exp: Date.now() + OTP_TTL });
     const sent = await sendOtpMail(email, code);
     if (sent) return res.json({ ok: true });
-    console.log(`[OTP] ${email} -> ${code}`);
-    return res.json({ ok: true, devCode: code });
+    console.log(`[OTP send fail] ${email}`);
+    return res.json({ ok: false, error: 'OTP send failed, try again' });
   } catch (e) {
     console.log('[OTP send error]', e.message);
     return res.status(500).json({ ok: false, error: 'Failed to send OTP' });

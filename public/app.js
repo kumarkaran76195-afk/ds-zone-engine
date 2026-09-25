@@ -47,7 +47,7 @@ async function initAuth() {
       if (d.ok) {
         document.getElementById('loginStep1').style.display = 'none';
         document.getElementById('loginStep2').style.display = 'flex';
-        document.getElementById('otpSentMsg').textContent = d.devCode ? 'OTP: ' + d.devCode + ' (dev mode)' : 'OTP sent to ' + email;
+        document.getElementById('otpSentMsg').textContent = 'OTP sent to ' + email;
         document.getElementById('loginOtp').focus();
       } else loginErr(d.error || 'Failed to send OTP');
     } catch (e) { loginErr('Network error'); }

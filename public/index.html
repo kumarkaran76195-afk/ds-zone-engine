@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -175,6 +175,8 @@
   <div class="ch-scroll" id="chainRows"></div>
   <div class="ch-pos-hd">PAPER POSITIONS</div>
   <div class="ch-pos-list" id="chainPos"></div>
+  <div class="ch-pos-hd ch-tr-hd">CLOSED TRADES <span id="chainTradesCnt"></span></div>
+  <div class="ch-pos-list ch-tr-list" id="chainTrades"></div>
   <div id="chainBack"></div>
   <div id="orderSheet">
     <div class="os-box">
@@ -194,6 +196,6 @@
 </div>
 <script src="indicator.js?v=6"></script>
 <script src="app.js?v=11"></script>
-<script src="chain.js?v=2"></script>
+<script src="chain.js?v=3"></script>
 </body>
 </html>

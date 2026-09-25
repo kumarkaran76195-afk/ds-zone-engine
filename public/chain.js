@@ -8,9 +8,9 @@
   function loadPaper() {
     try {
       const j = JSON.parse(localStorage.getItem('ds_paper'));
-      if (j && typeof j.cash === 'number') return { cash: j.cash, pos: j.pos || [] };
+      if (j && typeof j.cash === 'number') return { cash: j.cash, pos: j.pos || [], trades: j.trades || [] };
     } catch (e) {}
-    return { cash: START_CASH, pos: [] };
+    return { cash: START_CASH, pos: [], trades: [] };
   }
   function savePaper() { try { localStorage.setItem('ds_paper', JSON.stringify(paper)); } catch (e) {} }
 
@@ -47,6 +47,7 @@
       markPositions();
       updatePosLtp(j);
       renderPositions();
+      renderTrades();
       renderWallet();
       scrollToAtm(j);
     } catch (e) { $('chainErr').textContent = 'Network error'; }
@@ -287,10 +288,52 @@
     const p = paper.pos[i];
     paper.cash += p.ltp * p.qty;
     paper.pos.splice(i, 1);
+    paper.trades = paper.trades || [];
+    paper.trades.unshift({
+      sym: p.sym, strike: p.strike, side: p.side, lots: p.lots, qty: p.qty,
+      entry: p.entry, exit: p.ltp, pnl: (p.ltp - p.entry) * p.qty,
+      entryTs: p.entryTs, exitTs: Date.now()
+    });
+    if (paper.trades.length > 100) paper.trades.length = 100;
     savePaper();
     renderPositions();
+    renderTrades();
     renderWallet();
     markPositions();
+  }
+
+  function timeAgo(ts) {
+    const d = new Date(ts), now = new Date();
+    const hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    if (d.toDateString() === now.toDateString()) return hm;
+    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + ' ' + hm;
+  }
+
+  function renderTrades() {
+    const box = $('chainTrades');
+    if (!box) return;
+    const t = paper.trades || [];
+    const cnt = $('chainTradesCnt');
+    if (cnt) cnt.textContent = t.length ? '(' + t.length + ')' : '';
+    if (!t.length) {
+      box.innerHTML = '<div class="ch-none">Abhi koi trade close nahi — EXIT dabao, yahan profit/loss dikhega</div>';
+      return;
+    }
+    let wins = 0, losses = 0, tot = 0, h = '';
+    for (const x of t) {
+      if (x.pnl >= 0) { wins++; } else { losses++; }
+      tot += x.pnl;
+      const win = x.pnl >= 0;
+      h += '<div class="ch-tr">' +
+        '<div class="ch-pos-l"><b>' + x.sym + ' ' + x.strike + ' ' + x.side + '</b>' +
+        '<span>' + x.qty + ' qty · IN ₹' + fmt(x.entry) + ' → OUT ₹' + fmt(x.exit) + ' · ' + timeAgo(x.exitTs) + '</span></div>' +
+        '<div class="ch-pos-r ' + (win ? 'up' : 'dn') + '">' +
+        '<b>' + (win ? '+' : '') + '₹' + fmt(x.pnl) + '</b>' +
+        '<em class="ch-tag ' + (win ? 'win' : 'loss') + '">' + (win ? 'PROFIT' : 'LOSS') + '</em></div></div>';
+    }
+    h = '<div class="ch-tr-sum ' + (tot >= 0 ? 'up' : 'dn') + '">' +
+      t.length + ' TRADES · ' + wins + ' PROFIT / ' + losses + ' LOSS · TOTAL <b>' + (tot >= 0 ? '+' : '') + '₹' + fmt(tot) + '</b></div>' + h;
+    box.innerHTML = h;
   }
 
   function markPositions() {
@@ -308,10 +351,10 @@
   }
 
   function resetWallet() {
-    if (!confirm('Demo wallet reset karke ₹1,00,000 mil jayega?')) return;
-    paper = { cash: START_CASH, pos: [] };
+    if (!confirm('Demo wallet reset karke ₹1,00,000 mil jayega? Trade history bhi delete hogi.')) return;
+    paper = { cash: START_CASH, pos: [], trades: [] };
     savePaper();
-    renderWallet(); renderPositions(); markPositions();
+    renderWallet(); renderPositions(); renderTrades(); markPositions();
   }
 
   // ── open / close ──
@@ -337,6 +380,7 @@
     const cc = $('ordCancel'); if (cc) cc.onclick = closeOrder;
     const rl = $('ordLots'); if (rl) rl.oninput = updOrder;
     const rr = $('chainReset'); if (rr) rr.onclick = resetWallet;
+    renderTrades();
     document.querySelectorAll('.ch-sym').forEach(b => {
       b.onclick = () => {
         document.querySelectorAll('.ch-sym').forEach(x => x.classList.remove('on'));

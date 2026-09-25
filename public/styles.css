@@ -201,7 +201,18 @@ select:focus{outline:none;border-color:#00D09C}
 .ch-b.buy-pe:hover{background:#d64556}
 .ch-b:disabled{background:#1a1a28;color:#444;cursor:default}
 .ch-pos-hd{padding:7px 10px;background:#0e0e16;border-top:1px solid #1a1a28;border-bottom:1px solid #1a1a28;font-size:10px;font-weight:800;color:#555;letter-spacing:1px}
+.ch-tr-hd{color:#888}
+.ch-tr-hd span{color:#555;font-weight:600;letter-spacing:0}
 .ch-pos-list{max-height:32vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.ch-tr-list{max-height:26vh;background:#0b0b12}
+.ch-tr{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #12121c}
+.ch-tr-sum{position:sticky;top:0;padding:6px 10px;background:#12121c;border-bottom:1px solid #1a1a28;font-size:10px;font-weight:700;color:#888;letter-spacing:.3px;z-index:1}
+.ch-tr-sum b{font-size:12px;font-weight:800}
+.ch-tr-sum.up b{color:#00D09C}
+.ch-tr-sum.dn b{color:#ff4757}
+.ch-tag{font-style:normal;font-size:8px;font-weight:900;letter-spacing:.5px;padding:2px 6px;border-radius:3px}
+.ch-tag.win{background:rgba(0,208,156,.15);color:#00D09C;border:1px solid rgba(0,208,156,.4)}
+.ch-tag.loss{background:rgba(255,71,87,.15);color:#ff4757;border:1px solid rgba(255,71,87,.4)}
 .ch-none{padding:18px 10px;text-align:center;font-size:11px;color:#444}
 .ch-pos{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #12121c}
 .ch-pos-l{display:flex;flex-direction:column;gap:2px;min-width:0}

@@ -136,6 +136,82 @@ select:focus{outline:none;border-color:#00D09C}
 #buyBanner button{background:transparent;border:1px solid #252535;color:#666;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px}
 #buyBanner button:hover{border-color:#ff4757;color:#ff4757}
 
+/* ── Option Chain + Paper Trading ── */
+#chainBtn{background:#00D09C;color:#04120c;border:none;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:800;letter-spacing:.5px;cursor:pointer}
+#chainBtn:hover{background:#00b884}
+#chainScreen{position:fixed;inset:0;z-index:9500;background:#0a0a0f;display:none;flex-direction:column}
+.ch-top{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0e0e16;border-bottom:1px solid #1a1a28;flex-wrap:wrap}
+.ch-sym-w{display:flex;gap:4px}
+.ch-sym{background:#14141e;color:#666;border:1px solid #252535;border-radius:4px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.ch-sym.on{background:#00D09C;color:#04120c;border-color:#00D09C}
+#chainExp{flex:1;min-width:110px}
+.ch-head-r{display:flex;align-items:center;gap:8px}
+.ch-mkt{font-size:10px;font-weight:800;padding:3px 8px;border-radius:4px;letter-spacing:.5px}
+.ch-mkt.on{background:rgba(0,208,156,.15);color:#00D09C;border:1px solid rgba(0,208,156,.4)}
+.ch-mkt.off{background:rgba(255,71,87,.15);color:#ff4757;border:1px solid rgba(255,71,87,.4)}
+#chainClose{background:transparent;border:1px solid #252535;color:#666;border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px}
+#chainClose:hover{border-color:#ff4757;color:#ff4757}
+.ch-info{display:flex;align-items:center;gap:10px;padding:7px 10px;background:#0d0d14;border-bottom:1px solid #1a1a28;font-size:11px;color:#888;flex-wrap:wrap}
+.ch-info #chainSpot{color:#d1d4dc;font-weight:700;font-size:13px}
+.ch-info .ch-cash b{color:#00D09C}
+.ch-info .ch-pnl b{font-weight:800}
+.ch-pnl-v{color:#888}
+.ch-pnl-v.up{color:#00D09C}
+.ch-pnl-v.dn{color:#ff4757}
+#chainReset{background:transparent;border:1px solid #252535;color:#666;border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;margin-left:auto}
+#chainReset:hover{border-color:#ff4757;color:#ff4757}
+.ch-err{padding:5px 10px;font-size:11px;color:#ff4757;background:rgba(255,71,87,.08);display:none}
+.ch-err:not(:empty){display:block}
+.ch-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative}
+.ch-hd{display:grid;grid-template-columns:1fr 1fr 80px 1fr 1fr;gap:4px;padding:6px 10px;background:#0e0e16;border-bottom:1px solid #1a1a28;font-size:9px;font-weight:700;color:#555;letter-spacing:.5px;position:sticky;top:0;z-index:2;text-align:center}
+.ch-hd span:nth-child(2){text-align:right}
+.ch-hd span:nth-child(4){text-align:left}
+.ch-row{display:grid;grid-template-columns:1fr 1fr 80px 1fr 1fr;gap:4px;padding:5px 10px;font-size:12px;text-align:center;border-bottom:1px solid #12121c;align-items:center}
+.ch-row.atm{background:rgba(0,208,156,.07);border-top:1px solid rgba(0,208,156,.3);border-bottom:1px solid rgba(0,208,156,.3)}
+.ch-row.mine{box-shadow:inset 3px 0 0 #ffc143}
+.ch-oi{font-size:10px;color:#555}
+.ch-px{font-weight:700}
+.ch-px.ce{color:#00D09C;text-align:right}
+.ch-px.pe{color:#ff4757;text-align:left}
+.ch-k{font-weight:800;color:#d1d4dc;background:#14141e;border-radius:3px;padding:3px 0;font-size:11px}
+.ch-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 10px 8px}
+.ch-b{border:none;border-radius:4px;padding:9px 4px;font-size:11px;font-weight:800;cursor:pointer;letter-spacing:.3px;color:#fff}
+.ch-b.buy-ce{background:#0a7d5a}
+.ch-b.buy-ce:hover{background:#0d9a6e}
+.ch-b.buy-pe{background:#b83a48}
+.ch-b.buy-pe:hover{background:#d64556}
+.ch-b:disabled{background:#1a1a28;color:#444;cursor:default}
+.ch-pos-hd{padding:7px 10px;background:#0e0e16;border-top:1px solid #1a1a28;border-bottom:1px solid #1a1a28;font-size:10px;font-weight:800;color:#555;letter-spacing:1px}
+.ch-pos-list{max-height:32vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.ch-none{padding:18px 10px;text-align:center;font-size:11px;color:#444}
+.ch-pos{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #12121c}
+.ch-pos-l{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ch-pos-l b{font-size:12px;color:#d1d4dc}
+.ch-pos-l span{font-size:10px;color:#666}
+.ch-pos-r{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.ch-pos-r b{font-size:13px;font-weight:800}
+.ch-pos-r.up b{color:#00D09C}
+.ch-pos-r.dn b{color:#ff4757}
+.ch-exit{background:transparent;border:1px solid #252535;color:#888;border-radius:4px;padding:4px 12px;font-size:10px;font-weight:700;cursor:pointer}
+.ch-exit:hover{border-color:#ff4757;color:#ff4757}
+#chainBack{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9600;display:none}
+#orderSheet{position:fixed;left:0;right:0;bottom:0;z-index:9700;display:none;padding:12px}
+.os-box{background:#12121c;border:1px solid #252535;border-radius:10px;padding:16px;max-width:420px;margin:0 auto}
+.os-title{font-size:15px;font-weight:800;color:#d1d4dc;text-align:center;letter-spacing:.5px}
+.os-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}
+.os-i{background:#0d0d14;border:1px solid #1a1a28;border-radius:6px;padding:8px;text-align:center}
+.os-i span{display:block;font-size:9px;color:#555;letter-spacing:.5px;margin-bottom:3px}
+.os-i b{font-size:14px;color:#00D09C}
+.os-lots{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px}
+.os-lots label{font-size:11px;color:#888;font-weight:700}
+.os-lots input{width:80px;background:#0d0d14;border:1px solid #252535;border-radius:4px;color:#d1d4dc;padding:8px;font-size:15px;text-align:center;font-weight:700}
+.os-lots input:focus{outline:none;border-color:#00D09C}
+.os-note{font-size:11px;color:#ff4757;text-align:center;min-height:14px;margin-bottom:6px}
+.os-ok{width:100%;background:#00D09C;color:#04120c;border:none;border-radius:6px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;letter-spacing:.5px}
+.os-ok:disabled{background:#1a1a28;color:#444;cursor:default}
+.os-cancel{width:100%;background:transparent;border:1px solid #252535;color:#888;border-radius:6px;padding:10px;font-size:12px;cursor:pointer;margin-top:8px}
+.os-cancel:hover{border-color:#ff4757;color:#ff4757}
+
 @media (max-width:800px){
   body{overflow:auto}
   #app{height:auto;min-height:100vh}

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="styles.css?v=12">
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -65,6 +65,7 @@
       <div class="ltp"><span class="ltp-sym" id="ltpSym">NIFTY</span><span class="ltp-val" id="ltpVal">--</span></div>
     </div>
     <div class="hdr-r">
+      <button id="chainBtn" style="display:none" title="Option Chain">CHAIN</button>
       <div class="risk-ctrl">
         <label>CAPITAL</label><input type="number" id="riskCap" value="100000" min="1000" step="10000">
         <label>RISK</label><select id="riskPct"><option value="1" selected>1%</option><option value="1.5">1.5%</option><option value="2">2%</option></select>
@@ -149,7 +150,49 @@
   <a href="https://wa.me/916239883897?text=Hi%2C%20Indicator%20aur%20Channel%20kharidna%20hai%20(499)">WHATSAPP</a>
   <button id="buyBannerX" title="Band karo">✕</button>
 </div>
+<div id="chainScreen" style="display:none">
+  <div class="ch-top">
+    <div class="ch-sym-w">
+      <button class="ch-sym on" data-sym="NIFTY">NIFTY</button>
+      <button class="ch-sym" data-sym="BANKNIFTY">BANKNIFTY</button>
+    </div>
+    <select id="chainExp"></select>
+    <div class="ch-head-r">
+      <span class="ch-mkt" id="chainMkt">--</span>
+      <button id="chainClose" title="Band karo">✕</button>
+    </div>
+  </div>
+  <div class="ch-info">
+    <span id="chainSpot">--</span>
+    <span id="chainLot">LOT --</span>
+    <span class="ch-cash">DEMO: <b id="chainCash">₹1,00,000</b></span>
+    <span id="chainCnt">0 POS</span>
+    <span class="ch-pnl">P&L <b id="chainPnl" class="ch-pnl-v">₹0</b></span>
+    <button id="chainReset" title="Wallet reset">RESET</button>
+  </div>
+  <div class="ch-err" id="chainErr"></div>
+  <div class="ch-scroll" id="chainRows"></div>
+  <div class="ch-pos-hd">PAPER POSITIONS</div>
+  <div class="ch-pos-list" id="chainPos"></div>
+  <div id="chainBack"></div>
+  <div id="orderSheet">
+    <div class="os-box">
+      <div class="os-title" id="ordTitle">--</div>
+      <div class="os-g">
+        <div class="os-i"><span>PRICE</span><b id="ordPx">--</b></div>
+        <div class="os-i"><span>LOT SIZE</span><b id="ordQty">--</b></div>
+        <div class="os-i"><span>COST</span><b id="ordCost">--</b></div>
+        <div class="os-i"><span>DEMO CASH</span><b id="ordCash">--</b></div>
+      </div>
+      <div class="os-lots"><label>LOTS</label><input type="number" id="ordLots" value="1" min="1" max="100"></div>
+      <div class="os-note" id="ordNote"></div>
+      <button class="os-ok" id="ordOk">CONFIRM BUY</button>
+      <button class="os-cancel" id="ordCancel">CANCEL</button>
+    </div>
+  </div>
+</div>
 <script src="indicator.js?v=6"></script>
 <script src="app.js?v=11"></script>
+<script src="chain.js?v=1"></script>
 </body>
 </html>

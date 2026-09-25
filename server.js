@@ -414,6 +414,116 @@ app.post('/api/crash', (req, res) => {
 });
 app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
 
+// ── Live Option Chain (source: Groww public web) ──
+const CHAIN_PAGES = { NIFTY: 'nifty', BANKNIFTY: 'nifty-bank' };
+const CHAIN_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const chainStruct = {};    // sym|expiry -> { at, data }
+const chainPriceCache = {}; // ids-signature -> { at, data }
+const chainSpotCache = {};  // sym -> { at, v }
+const chainInflight = {};
+
+function parseNextData(html) {
+  const s = html.indexOf('<script id="__NEXT_DATA__"');
+  if (s < 0) return null;
+  const a = html.indexOf('>', s) + 1, b = html.indexOf('</script>', a);
+  if (a < 1 || b < 0) return null;
+  try { return JSON.parse(html.slice(a, b)); } catch (e) { return null; }
+}
+
+async function chainStructure(sym, expiry) {
+  const page = CHAIN_PAGES[sym];
+  if (!page) throw new Error('unsupported symbol');
+  const key = sym + '|' + expiry;
+  const hit = chainStruct[key];
+  if (hit && Date.now() - hit.at < 600000) return hit.data;
+  if (chainInflight[key]) return await chainInflight[key];
+  chainInflight[key] = (async () => {
+    const url = 'https://groww.in/options/' + page + (expiry ? '?expiry=' + encodeURIComponent(expiry) : '');
+    const r = await fetch(url, { headers: { 'User-Agent': CHAIN_UA, 'Accept': 'text/html' }, timeout: 15000 });
+    if (!r.ok) throw new Error('groww http ' + r.status);
+    const j = parseNextData(await r.text());
+    const d = j && j.props && j.props.pageProps && j.props.pageProps.data;
+    const oc = d && d.optionChain;
+    const list = oc && oc.optionContracts;
+    if (!list || !list.length) throw new Error('empty chain');
+    const ad = oc.aggregatedDetails || {};
+    const data = {
+      lot: ad.lotSize || (list[0].ce && list[0].ce.marketLot) || 0,
+      expiries: ad.expiryDates || [],
+      expiry: expiry || ad.currentExpiry || '',
+      rows: list.map(x => ({ strike: x.strikePrice / 100, ceId: x.ce && x.ce.growwContractId, peId: x.pe && x.pe.growwContractId }))
+    };
+    chainStruct[key] = { at: Date.now(), data };
+    return data;
+  })();
+  try { return await chainInflight[key]; } finally { delete chainInflight[key]; }
+}
+
+async function chainGetSpot(sym) {
+  const hit = chainSpotCache[sym];
+  if (hit && Date.now() - hit.at < 5000) return hit.v;
+  const r = await fetch(`${GROWW}/stocks_data/v1/accord_points/exchange/NSE/segment/CASH/latest_indices_ohlc/${sym}`,
+    { headers: { 'User-Agent': CHAIN_UA, 'Referer': 'https://groww.in/', 'Origin': 'https://groww.in' }, timeout: 8000 });
+  if (!r.ok) throw new Error('spot http ' + r.status);
+  const j = await r.json();
+  const v = j.value || j.indexIndicativePrice || 0;
+  chainSpotCache[sym] = { at: Date.now(), v };
+  return v;
+}
+
+async function chainBatchPrices(ids) {
+  const out = {};
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    try {
+      const r = await fetch(GROWW + '/stocks_fo_data/v1/tr_live_prices/exchange/NSE/segment/FNO/latest_prices_batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': CHAIN_UA, 'Referer': 'https://groww.in/', 'Origin': 'https://groww.in' },
+        body: JSON.stringify(chunk),
+        timeout: 8000
+      });
+      if (r.ok) Object.assign(out, await r.json());
+    } catch (e) { console.log('[CHAIN] batch chunk fail:', e.message); }
+  }
+  return out;
+}
+
+app.get('/api/chain/:sym', async (req, res) => {
+  try {
+    const sym = String(req.params.sym || '').toUpperCase();
+    if (!CHAIN_PAGES[sym]) return res.json({ error: 'unsupported symbol' });
+    const expiry = String(req.query.expiry || '').replace(/[^0-9-]/g, '');
+    const extra = String(req.query.strike || '').split(',').map(x => parseFloat(x)).filter(x => isFinite(x)).slice(0, 20);
+    const st = await chainStructure(sym, expiry);
+    const spot = await chainGetSpot(sym).catch(() => 0);
+    let use = st.rows.filter(r => Math.abs(r.strike - spot) <= 1200 || extra.indexOf(r.strike) >= 0);
+    if (use.length < 6) use = st.rows.slice(0, 60);
+    const ids = [];
+    use.forEach(r => { if (r.ceId) ids.push(r.ceId); if (r.peId) ids.push(r.peId); });
+    const sig = ids.join(',');
+    let prices = null;
+    const pc = chainPriceCache[sig];
+    if (pc && Date.now() - pc.at < 4000) prices = pc.data;
+    else {
+      prices = await chainBatchPrices(ids);
+      chainPriceCache[sig] = { at: Date.now(), data: prices };
+      const ks = Object.keys(chainPriceCache);
+      if (ks.length > 30) delete chainPriceCache[ks[0]];
+    }
+    const pack = p => p ? {
+      ltp: p.ltp || 0, oi: p.openInterest || 0, vol: p.volume || 0,
+      chg: p.dayChange || 0, chgP: p.dayChangePerc || 0
+    } : { ltp: 0, oi: 0, vol: 0, chg: 0, chgP: 0 };
+    const rows = use.map(r => ({ strike: r.strike, ce: pack(prices[r.ceId]), pe: pack(prices[r.peId]) }))
+      .sort((a, b) => a.strike - b.strike);
+    res.json({ sym, spot, lot: st.lot, expiry: st.expiry, expiries: st.expiries, rows, mktOpen: isMarketOpen(), ts: Date.now() });
+  } catch (e) {
+    console.log('[CHAIN]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+
 app.get('/api/candles/:sym/:tf', async (req, res) => {
   console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);
   try {

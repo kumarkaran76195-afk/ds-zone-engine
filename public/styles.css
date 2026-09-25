@@ -122,6 +122,12 @@ select:focus{outline:none;border-color:#00D09C}
 .login-err{min-height:18px;font-size:11px;color:#ff4757;margin-top:8px}
 .login-foot{font-size:10px;color:#444;margin-top:16px;letter-spacing:0.5px}
 
+#paywallScreen{position:fixed;inset:0;z-index:10001;background:#0a0a0f;display:flex;align-items:center;justify-content:center;padding:20px}
+.paywall-title{font-size:15px;font-weight:800;color:#ff4757;margin:12px 0 4px;letter-spacing:1px}
+.paywall-wa{display:block;margin-top:18px;padding:14px;background:#25D366;color:#fff;border-radius:6px;font-size:13px;font-weight:700;letter-spacing:1px;text-decoration:none;text-align:center}
+.paywall-wa:hover{background:#1fbb59}
+.paywall-num{font-size:14px;color:#d1d4dc;margin-top:14px;font-weight:700;letter-spacing:1.5px}
+
 @media (max-width:800px){
   body{overflow:auto}
   #app{height:auto;min-height:100vh}

@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const nodemailer = require('nodemailer');
@@ -47,6 +48,29 @@ const devices = new Map();    // deviceId -> { email, exp }  (1 phone = 1 email)
 const OTP_TTL = 5 * 60 * 1000;
 const SESSION_TTL = 24 * 60 * 60 * 1000;
 const GMAIL_RE = /^[a-z0-9._-]{1,64}@gmail\.com$/;
+
+// ── 7-day free trial (per email) ──
+const TRIAL_DAYS = parseInt(process.env.TRIAL_DAYS || '7', 10);
+const TRIALS_FILE = path.join(__dirname, 'trials.json');
+let trials = new Map();   // email -> firstLoginTs
+try {
+  if (fs.existsSync(TRIALS_FILE)) {
+    trials = new Map(Object.entries(JSON.parse(fs.readFileSync(TRIALS_FILE, 'utf8'))));
+  }
+} catch (e) { console.log('[trials load fail]', e.message); }
+
+function saveTrials() {
+  try { fs.writeFileSync(TRIALS_FILE, JSON.stringify(Object.fromEntries(trials))); }
+  catch (e) { console.log('[trials save fail]', e.message); }
+}
+
+function trialInfo(email) {
+  const start = trials.get(email);
+  if (!start) return { daysLeft: TRIAL_DAYS, expired: false };
+  const used = Math.max(0, Date.now() - start);
+  const daysLeft = Math.max(0, Math.min(TRIAL_DAYS, TRIAL_DAYS - Math.floor(used / 86400000)));
+  return { daysLeft, expired: daysLeft <= 0 };
+}
 
 async function sendOtpMail(to, code) {
   const brevoKey = process.env.BREVO_API_KEY;
@@ -127,10 +151,11 @@ app.post('/api/otp/verify', (req, res) => {
     }
   }
   otpStore.delete(email);
+  if (!trials.has(email)) { trials.set(email, Date.now()); saveTrials(); }
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { email, exp: Date.now() + SESSION_TTL });
   if (deviceId) devices.set(deviceId, { email, exp: Date.now() + SESSION_TTL });
-  res.json({ ok: true, token });
+  res.json({ ok: true, token, trial: trialInfo(email) });
 });
 
 app.post('/api/otp/session', (req, res) => {
@@ -140,7 +165,7 @@ app.post('/api/otp/session', (req, res) => {
     sessions.delete(token);
     return res.json({ ok: false });
   }
-  res.json({ ok: true, email: s.email });
+  res.json({ ok: true, email: s.email, trial: trialInfo(s.email) });
 });
 
 function getIST() {

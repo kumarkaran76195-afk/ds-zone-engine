@@ -23,6 +23,13 @@ function hideLogin() {
 
 function loginErr(m) { document.getElementById('loginErr').textContent = m || ''; }
 
+function showPaywall() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('paywallScreen').style.display = 'flex';
+  authed = true;
+}
+
 function getDeviceId() {
   let id = localStorage.getItem('ds_did');
   if (!id) {
@@ -39,7 +46,10 @@ async function initAuth() {
     try {
       const r = await fetch('/api/otp/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
       const d = await r.json();
-      if (d.ok) { hideLogin(); startApp(); return; }
+      if (d.ok) {
+        if (d.trial && d.trial.expired) { showPaywall(); return; }
+        hideLogin(); startApp(); return;
+      }
       localStorage.removeItem('ds_token');
     } catch (e) {}
   }
@@ -75,6 +85,7 @@ async function initAuth() {
       const d = await r.json();
       if (d.ok) {
         localStorage.setItem('ds_token', d.token);
+        if (d.trial && d.trial.expired) { showPaywall(); return; }
         hideLogin();
         startApp();
       } else loginErr(d.error || 'Wrong OTP');

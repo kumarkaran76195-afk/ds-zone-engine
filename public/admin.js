@@ -49,11 +49,12 @@ function render(filter) {
       : u.expired ? '<span class="badge exp">TRIAL KHATAM</span>'
       : '<span class="badge ok">TRIAL ' + u.daysLeft + 'd</span>';
     const live = u.active ? '<span class="badge live">● ONLINE</span>' : '';
+    const when = fmtDate(u.last || u.since);
     return '<div class="u-row">' +
       '<div class="u-mail">' + u.email + '</div>' +
-      '<div class="u-meta">' + fmtDate(u.since) + '</div>' +
+      '<div class="u-meta">' + when + '</div>' +
       status + live +
-      '<button class="tick-btn' + (u.paid ? ' paid' : '') + '" data-email="' + u.email + '" data-paid="' + (u.paid ? 0 : 1) + '" title="Paid verify tick">' + (u.paid ? '✓' : '✓?') + '</button>' +
+      '<button class="tick-btn' + (u.paid ? ' paid' : '') + '" data-email="' + u.email + '" data-paid="' + (u.paid ? 0 : 1) + '" title="' + (u.paid ? 'Tick hatana hai?' : 'Paid verify karo') + '">✓</button>' +
       '</div>';
   }).join('');
   el.querySelectorAll('.tick-btn[data-email]').forEach(btn => {

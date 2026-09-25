@@ -17,28 +17,40 @@
 .stat-num.blue{color:#59c2ff}
 .stat-lbl{font-size:10px;color:#666;letter-spacing:1px;margin-top:4px}
 .adm-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.adm-bar input{flex:1;min-width:160px;background:#14141e;color:#d1d4dc;border:1px solid #252535;border-radius:6px;padding:10px 12px;font-size:13px;outline:none}
+.adm-bar input{flex:1;min-width:160px;background:#14141e;color:#d1d4dc;border:1px solid #252535;border-radius:6px;padding:10px 12px;font-size:16px;outline:none}
 .adm-bar input:focus{border-color:#00D09C}
-.btn-add{background:#00D09C;color:#fff;border:none;border-radius:6px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px}
+.btn-add{background:#00D09C;color:#fff;border:none;border-radius:6px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;min-height:44px}
 .users{background:#0e0e16;border:1px solid #1a1a28;border-radius:10px;overflow:hidden}
 .u-row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid #14141e;flex-wrap:wrap}
 .u-row:last-child{border-bottom:none}
-.u-mail{flex:1;min-width:180px;font-size:13px;color:#d1d4dc;word-break:break-all}
+.u-mail{flex:1;min-width:150px;font-size:13px;color:#d1d4dc;word-break:break-all}
 .u-meta{font-size:10px;color:#666;min-width:70px}
 .badge{font-size:10px;padding:3px 8px;border-radius:10px;font-weight:700;letter-spacing:0.5px;white-space:nowrap}
 .badge.ok{background:rgba(0,208,156,.12);color:#00D09C;border:1px solid rgba(0,208,156,.3)}
 .badge.exp{background:rgba(255,71,87,.12);color:#ff4757;border:1px solid rgba(255,71,87,.3)}
 .badge.live{background:rgba(89,194,255,.12);color:#59c2ff;border:1px solid rgba(89,194,255,.3)}
-.tick-btn{background:transparent;border:1px solid #252535;color:#666;border-radius:6px;padding:6px 12px;font-size:14px;cursor:pointer;min-width:44px}
+.tick-btn{background:transparent;border:1px solid #252535;color:#666;border-radius:6px;padding:6px 12px;font-size:14px;cursor:pointer;min-width:44px;min-height:44px}
 .tick-btn.paid{background:rgba(0,208,156,.12);border-color:#00D09C;color:#00D09C}
 .tick-btn:hover{border-color:#00D09C}
 #admGate{max-width:340px;margin:12vh auto;background:#0e0e16;border:1px solid #1a1a28;border-radius:12px;padding:26px 20px;text-align:center}
-#admGate input{width:100%;background:#14141e;color:#d1d4dc;border:1px solid #252535;border-radius:6px;padding:12px;font-size:14px;outline:none;text-align:center;margin:16px 0 12px}
-#admGate button{width:100%;padding:12px;border:none;border-radius:6px;background:#00D09C;color:#fff;font-weight:700;font-size:13px;letter-spacing:1px;cursor:pointer}
+#admGate input{width:100%;background:#14141e;color:#d1d4dc;border:1px solid #252535;border-radius:6px;padding:12px;font-size:16px;outline:none;text-align:center;margin:16px 0 12px}
+#admGate button{width:100%;padding:12px;border:none;border-radius:6px;background:#00D09C;color:#fff;font-weight:700;font-size:13px;letter-spacing:1px;cursor:pointer;min-height:46px}
 #gateErr{min-height:16px;font-size:11px;color:#ff4757;margin-top:8px}
 .adm-msg{font-size:11px;color:#00D09C;min-height:16px;margin-bottom:8px}
 .empty{padding:30px;text-align:center;color:#555;font-size:13px}
-@media(max-width:600px){.stats{grid-template-columns:repeat(3,1fr)}.stat-num{font-size:20px}}
+@media(max-width:600px){
+  #adminApp{padding:12px 10px 50px}
+  .stats{gap:6px}
+  .stat{padding:10px 6px}
+  .stat-num{font-size:20px}
+  .stat-lbl{font-size:9px;letter-spacing:0}
+  .adm-title{font-size:14px}
+  .u-row{gap:6px;padding:10px}
+  .u-mail{flex:1 1 100%;min-width:0;font-size:14px}
+  .u-meta{min-width:0;order:4}
+  .tick-btn{min-width:48px}
+  .adm-bar input,.adm-bar .btn-add{width:100%;flex:1 1 100%;min-width:0}
+}
 </style>
 </head>
 <body>
@@ -53,7 +65,7 @@
   <div class="adm-head">
     <div>
       <div class="adm-title">KARAN — ADMIN</div>
-      <div class="adm-sub">DS Zone Engine · users &amp; verified (paid) tick</div>
+      <div class="adm-sub">DS Zone Engine · sabhi logins &amp; verified (paid) tick</div>
     </div>
     <button class="tick-btn" id="btnLogout" title="Logout">Logout</button>
   </div>
@@ -72,6 +84,6 @@
   </div>
   <div class="users" id="userList"><div class="empty">Loading...</div></div>
 </div>
-<script src="admin.js?v=1"></script>
+<script src="admin.js?v=2"></script>
 </body>
 </html>

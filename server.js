@@ -49,10 +49,46 @@ const OTP_TTL = 5 * 60 * 1000;
 const SESSION_TTL = 24 * 60 * 60 * 1000;
 const GMAIL_RE = /^[a-z0-9._-]{1,64}@gmail\.com$/;
 
+// persistent store dir: Railway volume (/data) ya local dir
+const STORE_DIR = (() => {
+  const dir = process.env.STORE_DIR || (fs.existsSync('/data') ? '/data' : __dirname);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  return dir;
+})();
+console.log('[store dir]', STORE_DIR);
+
+// sessions + devices persist (deploy ke baad bhi login rahe)
+function loadJson(name) {
+  try {
+    const f = path.join(STORE_DIR, name);
+    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch (e) { console.log('[' + name + ' load fail]', e.message); }
+  return {};
+}
+function saveJson(name, obj) {
+  try { fs.writeFileSync(path.join(STORE_DIR, name), JSON.stringify(obj)); }
+  catch (e) { console.log('[' + name + ' save fail]', e.message); }
+}
+{
+  const now = Date.now();
+  for (const [t, s] of Object.entries(loadJson('sessions.json'))) if (s && s.exp > now) sessions.set(t, s);
+  for (const [d, v] of Object.entries(loadJson('devices.json'))) if (v && v.exp > now) devices.set(d, v);
+}
+function saveSessions() {
+  const o = {};
+  for (const [t, s] of sessions) if (s.exp > Date.now()) o[t] = s;
+  saveJson('sessions.json', o);
+}
+function saveDevices() {
+  const o = {};
+  for (const [d, v] of devices) if (v.exp > Date.now()) o[d] = v;
+  saveJson('devices.json', o);
+}
+
 // ── 7-day free trial (per email) ──
 const TRIAL_DAYS = parseInt(process.env.TRIAL_DAYS || '7', 10);
-const TRIALS_FILE = path.join(__dirname, 'trials.json');
-let trials = new Map();   // email -> firstLoginTs
+const TRIALS_FILE = path.join(STORE_DIR, 'trials.json');
+let trials = new Map();   // email -> { first, last }  (legacy: number = first)
 try {
   if (fs.existsSync(TRIALS_FILE)) {
     trials = new Map(Object.entries(JSON.parse(fs.readFileSync(TRIALS_FILE, 'utf8'))));
@@ -64,17 +100,29 @@ function saveTrials() {
   catch (e) { console.log('[trials save fail]', e.message); }
 }
 
+function trialFirst(v) { return typeof v === 'number' ? v : (v && v.first) || Date.now(); }
+function trialLast(v) { return typeof v === 'number' ? v : (v && v.last) || trialFirst(v); }
+
 function trialInfo(email) {
   if (paidUsers.has(email)) return { daysLeft: TRIAL_DAYS, expired: false, paid: true };
   const start = trials.get(email);
   if (!start) return { daysLeft: TRIAL_DAYS, expired: false };
-  const used = Math.max(0, Date.now() - start);
+  const used = Math.max(0, Date.now() - trialFirst(start));
   const daysLeft = Math.max(0, Math.min(TRIAL_DAYS, TRIAL_DAYS - Math.floor(used / 86400000)));
   return { daysLeft, expired: daysLeft <= 0 };
 }
 
+function recordLogin(email) {
+  const now = Date.now();
+  const prev = trials.get(email);
+  if (prev === undefined) trials.set(email, { first: now, last: now });
+  else if (typeof prev === 'number') trials.set(email, { first: prev, last: now });
+  else prev.last = now;
+  saveTrials();
+}
+
 // ── Paid (verified tick) users ──
-const PAID_FILE = path.join(__dirname, 'paid.json');
+const PAID_FILE = path.join(STORE_DIR, 'paid.json');
 let paidUsers = new Map();   // email -> paidAt ts
 try {
   if (fs.existsSync(PAID_FILE)) {
@@ -115,12 +163,12 @@ app.get('/api/admin/users', adminAuth, (req, res) => {
   const list = [];
   for (const [email, start] of trials) {
     const ti = trialInfo(email);
-    list.push({ email, since: start, daysLeft: ti.daysLeft, expired: ti.expired, paid: paidUsers.has(email), active: activeEmails.has(email) });
+    list.push({ email, since: trialFirst(start), last: trialLast(start), daysLeft: ti.daysLeft, expired: ti.expired, paid: paidUsers.has(email), active: activeEmails.has(email) });
   }
   for (const [email] of paidUsers) {
-    if (!trials.has(email)) list.push({ email, since: null, daysLeft: null, expired: false, paid: true, active: activeEmails.has(email) });
+    if (!trials.has(email)) list.push({ email, since: null, last: null, daysLeft: null, expired: false, paid: true, active: activeEmails.has(email) });
   }
-  list.sort((a, b) => (b.since || 0) - (a.since || 0));
+  list.sort((a, b) => (b.last || b.since || 0) - (a.last || a.since || 0));
   res.json({ ok: true, users: list });
 });
 
@@ -216,10 +264,12 @@ app.post('/api/otp/verify', (req, res) => {
     }
   }
   otpStore.delete(email);
-  if (!trials.has(email)) { trials.set(email, Date.now()); saveTrials(); }
+  recordLogin(email);
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { email, exp: Date.now() + SESSION_TTL });
   if (deviceId) devices.set(deviceId, { email, exp: Date.now() + SESSION_TTL });
+  saveSessions();
+  saveDevices();
   res.json({ ok: true, token, trial: trialInfo(email) });
 });
 

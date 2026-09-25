@@ -2,6 +2,7 @@
 (function () {
   const START_CASH = 100000;
   let cSym = 'NIFTY', cExpiry = '', cData = null, cTimer = null, cLoading = false;
+  let cSig = null;
   let paper = loadPaper();
 
   function loadPaper() {
@@ -40,6 +41,8 @@
       if (!cExpiry && j.expiry) cExpiry = j.expiry;
       renderExpiries(j);
       renderHead(j);
+      cSig = calcSignal(j);
+      renderSigBanner();
       renderRows(j);
       markPositions();
       updatePosLtp(j);
@@ -68,21 +71,88 @@
     $('chainMkt').className = 'ch-mkt ' + (j.mktOpen ? 'on' : 'off');
   }
 
+  // ── auto signal: market hisab CE/PE + strike (engine analysis + OI) ──
+  function nearestStrike(j) {
+    const step = j.sym === 'NIFTY' ? 50 : 100;
+    return Math.round((j.spot || 0) / step) * step;
+  }
+
+  function calcSignal(j) {
+    if (!j || !j.spot || !j.rows || !j.rows.length) return null;
+    let ceV = 0, peV = 0;
+    const why = [];
+    let a = null;
+    try { a = (typeof lastA !== 'undefined') ? lastA : null; } catch (e) {}
+    const sameSym = (typeof sym !== 'undefined') && sym === j.sym;
+    let setupStrike = null;
+    if (a && sameSym) {
+      const s = a.activeSetup;
+      if (s && (s.status === 'WAITING' || s.status === 'ENTRY_TRIGGERED')) {
+        if (s.direction === 'BUY') ceV += 2; else peV += 2;
+        why.push('SETUP ' + s.direction + ' ' + s.zoneTF + 'm');
+        const step = j.sym === 'NIFTY' ? 50 : 100;
+        setupStrike = Math.round((s.entry || 0) / step) * step;
+      }
+      let tv = 0;
+      ['t1', 't3', 't5'].forEach(k => {
+        const t = a[k];
+        if (!t) return;
+        if (t.trend === 'up') { ceV++; tv++; }
+        else if (t.trend === 'down') { peV++; tv++; }
+      });
+      if (tv) why.push('TREND 1/3/5m');
+    }
+    const step = j.sym === 'NIFTY' ? 50 : 100;
+    const atm = nearestStrike(j);
+    const near = j.rows.filter(r => Math.abs(r.strike - atm) <= step * 4);
+    let ceOI = 0, peOI = 0;
+    near.forEach(r => { ceOI += (r.ce.oi || 0); peOI += (r.pe.oi || 0); });
+    if (ceOI && peOI) {
+      if (peOI > ceOI * 1.15) { ceV++; why.push('PUT WRITING > CALL'); }
+      else if (ceOI > peOI * 1.15) { peV++; why.push('CALL WRITING > PUT'); }
+    }
+    if (!ceV && !peV) return { side: null, strike: atm, ceV: 0, peV: 0, why: ['NO BIAS'] };
+    const side = ceV > peV ? 'CE' : peV > ceV ? 'PE' : null;
+    if (!side) return { side: null, strike: atm, ceV: ceV, peV: peV, why: ['MIXED SIGNAL'] };
+    let strike = atm;
+    if (setupStrike && j.rows.some(r => r.strike === setupStrike)) strike = setupStrike;
+    const conf = Math.abs(ceV - peV) >= 3 ? 'STRONG' : Math.abs(ceV - peV) === 2 ? 'GOOD' : 'WEAK';
+    return { side: side, strike: strike, ceV: ceV, peV: peV, why: why, conf: conf };
+  }
+
+  function renderSigBanner() {
+    const el = $('chainSig');
+    if (!el) return;
+    if (!cSig) { el.textContent = ''; el.className = 'ch-sig'; return; }
+    const s = cSig;
+    if (!s.side) {
+      el.className = 'ch-sig none';
+      el.innerHTML = '<b>— NO SIGNAL</b><span>' + s.why.join(' · ') + ' — wait karo</span>';
+      return;
+    }
+    el.className = 'ch-sig ' + (s.side === 'CE' ? 'ce' : 'pe');
+    el.innerHTML = '<b>' + (s.side === 'CE' ? '▲ BUY CE' : '▼ BUY PE') + ' ' + s.strike + '</b>' +
+      '<span>' + s.why.join(' · ') + '</span>' +
+      '<em>' + s.conf + ' · CE ' + s.ceV + ':' + s.peV + ' PE</em>';
+  }
+
   function renderRows(j) {
     const box = $('chainRows');
+    const sigK = (cSig && cSig.side) ? cSig.strike : null;
     let h = '<div class="ch-hd"><span>OI</span><span>CALL</span><span>STRIKE</span><span>PUT</span><span>OI</span></div>';
     for (const r of j.rows) {
       const atm = j.spot && Math.abs(r.strike - j.spot) <= (j.sym === 'NIFTY' ? 100 : 250);
-      h += '<div class="ch-row' + (atm ? ' atm' : '') + '" data-k="' + r.strike + '">' +
+      const sig = sigK === r.strike;
+      h += '<div class="ch-row' + (atm ? ' atm' : '') + (sig ? ' sig' : '') + '" data-k="' + r.strike + '">' +
         '<span class="ch-oi">' + (r.ce.oi ? oiFmt(r.ce.oi) : '--') + '</span>' +
         '<span class="ch-px ce">' + (r.ce.ltp ? fmt(r.ce.ltp) : '--') + '</span>' +
-        '<span class="ch-k">' + r.strike + '</span>' +
+        '<span class="ch-k">' + r.strike + (sig ? '<i class="ch-sigtag">' + (cSig.side === 'CE' ? '▲' : '▼') + '</i>' : '') + '</span>' +
         '<span class="ch-px pe">' + (r.pe.ltp ? fmt(r.pe.ltp) : '--') + '</span>' +
         '<span class="ch-oi">' + (r.pe.oi ? oiFmt(r.pe.oi) : '--') + '</span>' +
         '</div>' +
         '<div class="ch-btns" data-k="' + r.strike + '">' +
-        '<button class="ch-b buy-ce" ' + (r.ce.ltp ? '' : 'disabled') + '>BUY CE ' + (r.ce.ltp ? '₹' + fmt(r.ce.ltp) : '') + '</button>' +
-        '<button class="ch-b buy-pe" ' + (r.pe.ltp ? '' : 'disabled') + '>BUY PE ' + (r.pe.ltp ? '₹' + fmt(r.pe.ltp) : '') + '</button>' +
+        '<button class="ch-b buy-ce' + (sig && cSig.side === 'CE' ? ' rec' : '') + '" ' + (r.ce.ltp ? '' : 'disabled') + '>' + (sig && cSig.side === 'CE' ? '★ ' : '') + 'BUY CE ' + (r.ce.ltp ? '₹' + fmt(r.ce.ltp) : '') + '</button>' +
+        '<button class="ch-b buy-pe' + (sig && cSig.side === 'PE' ? ' rec' : '') + '" ' + (r.pe.ltp ? '' : 'disabled') + '>' + (sig && cSig.side === 'PE' ? '★ ' : '') + 'BUY PE ' + (r.pe.ltp ? '₹' + fmt(r.pe.ltp) : '') + '</button>' +
         '</div>';
     }
     box.innerHTML = h;
@@ -106,7 +176,8 @@
   function scrollToAtm(j) {
     if (!j.spot) return;
     const step = j.sym === 'NIFTY' ? 50 : 100;
-    const key = Math.round(j.spot / step) * step;
+    let key = Math.round(j.spot / step) * step;
+    if (cSig && cSig.side && cSig.strike) key = cSig.strike;
     const el = document.querySelector('.ch-row[data-k="' + key + '"]');
     if (!el) return;
     const box = $('chainRows');

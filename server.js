@@ -401,6 +401,13 @@ app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: false 
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: Date.now() }));
+
+app.post('/api/crash', (req, res) => {
+  try {
+    console.log('[CRASH]', JSON.stringify(req.body));
+  } catch (e) { console.log('[CRASH] log fail]', e.message); }
+  res.json({ ok: true });
+});
 app.get('/api/instruments', (req, res) => res.json(INSTRUMENTS));
 
 app.get('/api/candles/:sym/:tf', async (req, res) => {

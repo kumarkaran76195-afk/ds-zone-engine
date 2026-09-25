@@ -30,11 +30,13 @@ INJECTED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\And
 	android:icon
 		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:9:9-45
 	android:allowBackup
-		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:8:9-35
+		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:8:42-68
 	android:theme
 		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:11:9-44
 	android:usesCleartextTraffic
 		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:12:9-44
+	android:name
+		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:8:9-33
 activity#com.karan.admin.MainActivity
 ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:13:9-21:20
 	android:exported

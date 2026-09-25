@@ -2,10 +2,13 @@ package com.dszone.engine;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -63,7 +66,18 @@ public class MainActivity extends Activity {
         s.setBuiltInZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
+                return handleLink(req.getUrl().toString());
+            }
+
+            @SuppressWarnings("deprecation")
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return handleLink(url);
+            }
+        });
         webView.setBackgroundColor(0xFF0A0A0F);
         webView.loadUrl("https://ds-zone-engine-production.up.railway.app/");
 
@@ -88,6 +102,42 @@ public class MainActivity extends Activity {
                 Log.w(TAG, "ad init failed", t);
             }
         }
+    }
+
+    private boolean handleLink(String url) {
+        if (url == null) return false;
+        String u = url.toLowerCase(java.util.Locale.ROOT);
+        boolean external = u.startsWith("whatsapp://")
+                || u.contains("wa.me/")
+                || u.contains("whatsapp.com/")
+                || u.startsWith("intent:")
+                || u.startsWith("mailto:")
+                || u.startsWith("tel:");
+        if (!external) return false;
+        try {
+            String target = url;
+            if (u.contains("wa.me/") || u.contains("whatsapp.com/send")) {
+                String text = null;
+                int qi = url.indexOf("?text=");
+                if (qi >= 0) text = url.substring(qi + 6);
+                String phone = "916239883897";
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("(?:wa\\.me/|whatsapp\\.com/send\\?phone=)(\\d+)").matcher(url);
+                if (m.find()) phone = m.group(1);
+                target = "whatsapp://send?phone=" + phone + (text != null ? "&text=" + text : "");
+            }
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(target));
+            i.addCategory(Intent.CATEGORY_BROWSABLE);
+            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Throwable t) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (Throwable t2) {
+                Log.w(TAG, "no app for " + url);
+            }
+        }
+        return true;
     }
 
     @Override

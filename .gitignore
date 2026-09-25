@@ -1,3 +1,5 @@
 node_modules/
 .env
 trial-users.json
+trials.json
+paid.json

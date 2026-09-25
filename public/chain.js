@@ -48,6 +48,7 @@
       updatePosLtp(j);
       renderPositions();
       renderTrades();
+      renderNet();
       renderWallet();
       scrollToAtm(j);
     } catch (e) { $('chainErr').textContent = 'Network error'; }
@@ -298,6 +299,7 @@
     savePaper();
     renderPositions();
     renderTrades();
+    renderNet();
     renderWallet();
     markPositions();
   }
@@ -319,21 +321,38 @@
       box.innerHTML = '<div class="ch-none">Abhi koi trade close nahi — EXIT dabao, yahan profit/loss dikhega</div>';
       return;
     }
-    let wins = 0, losses = 0, tot = 0, h = '';
+    let wins = 0, losses = 0, tot = 0, prof = 0, lossSum = 0, h = '';
     for (const x of t) {
-      if (x.pnl >= 0) { wins++; } else { losses++; }
+      if (x.pnl >= 0) { wins++; prof += x.pnl; } else { losses++; lossSum += -x.pnl; }
       tot += x.pnl;
       const win = x.pnl >= 0;
       h += '<div class="ch-tr">' +
         '<div class="ch-pos-l"><b>' + x.sym + ' ' + x.strike + ' ' + x.side + '</b>' +
         '<span>' + x.qty + ' qty · IN ₹' + fmt(x.entry) + ' → OUT ₹' + fmt(x.exit) + ' · ' + timeAgo(x.exitTs) + '</span></div>' +
         '<div class="ch-pos-r ' + (win ? 'up' : 'dn') + '">' +
-        '<b>' + (win ? '+' : '') + '₹' + fmt(x.pnl) + '</b>' +
+        '<b>' + (win ? '+' : '-') + '₹' + fmt(Math.abs(x.pnl)) + '</b>' +
         '<em class="ch-tag ' + (win ? 'win' : 'loss') + '">' + (win ? 'PROFIT' : 'LOSS') + '</em></div></div>';
     }
-    h = '<div class="ch-tr-sum ' + (tot >= 0 ? 'up' : 'dn') + '">' +
-      t.length + ' TRADES · ' + wins + ' PROFIT / ' + losses + ' LOSS · TOTAL <b>' + (tot >= 0 ? '+' : '') + '₹' + fmt(tot) + '</b></div>' + h;
+    h = '<div class="ch-tr-sum">' +
+      '<div class="ch-tr-calc ' + (tot >= 0 ? 'up' : 'dn') + '">' +
+      '<span class="cc-i">START <b>₹' + fmt(START_CASH) + '</b></span>' +
+      '<span class="cc-op">+</span><span class="cc-i up">PROFIT <b>₹' + fmt(prof) + '</b></span>' +
+      '<span class="cc-op">−</span><span class="cc-i dn">LOSS <b>₹' + fmt(lossSum) + '</b></span>' +
+      '<span class="cc-op">=</span><span class="cc-i">DEMO <b>₹' + fmt(paper.cash) + '</b></span>' +
+      '</div>' +
+      '<div class="ch-tr-line ' + (tot >= 0 ? 'up' : 'dn') + '">' + t.length + ' TRADES · ' + wins + ' PROFIT / ' + losses + ' LOSS · TOTAL ' + (tot >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(tot)) + '</div>' +
+      '</div>' + h;
     box.innerHTML = h;
+  }
+
+  function renderNet() {
+    const el = $('chainNet');
+    if (!el) return;
+    const t = paper.trades || [];
+    let tot = 0;
+    for (const x of t) tot += x.pnl;
+    el.textContent = (tot >= 0 ? '+₹' : '-₹') + fmt(Math.abs(tot));
+    el.className = 'ch-pnl-v ' + (tot >= 0 ? 'up' : 'dn');
   }
 
   function markPositions() {
@@ -354,7 +373,7 @@
     if (!confirm('Demo wallet reset karke ₹1,00,000 mil jayega? Trade history bhi delete hogi.')) return;
     paper = { cash: START_CASH, pos: [], trades: [] };
     savePaper();
-    renderWallet(); renderPositions(); renderTrades(); markPositions();
+    renderWallet(); renderPositions(); renderTrades(); renderNet(); markPositions();
   }
 
   // ── open / close ──
@@ -381,6 +400,7 @@
     const rl = $('ordLots'); if (rl) rl.oninput = updOrder;
     const rr = $('chainReset'); if (rr) rr.onclick = resetWallet;
     renderTrades();
+    renderNet();
     document.querySelectorAll('.ch-sym').forEach(b => {
       b.onclick = () => {
         document.querySelectorAll('.ch-sym').forEach(x => x.classList.remove('on'));

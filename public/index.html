@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="stylesheet" href="styles.css?v=14">
+<link rel="stylesheet" href="styles.css?v=15">
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -168,6 +168,7 @@
     <span class="ch-cash">DEMO: <b id="chainCash">₹1,00,000</b></span>
     <span id="chainCnt">0 POS</span>
     <span class="ch-pnl">P&L <b id="chainPnl" class="ch-pnl-v">₹0</b></span>
+    <span class="ch-book">TOTAL P&L <b id="chainNet" class="ch-pnl-v">₹0</b></span>
     <button id="chainReset" title="Wallet reset">RESET</button>
   </div>
   <div class="ch-err" id="chainErr"></div>
@@ -196,6 +197,6 @@
 </div>
 <script src="indicator.js?v=6"></script>
 <script src="app.js?v=11"></script>
-<script src="chain.js?v=3"></script>
+<script src="chain.js?v=4"></script>
 </body>
 </html>

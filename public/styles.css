@@ -155,6 +155,8 @@ select:focus{outline:none;border-color:#00D09C}
 .ch-info #chainSpot{color:#d1d4dc;font-weight:700;font-size:13px}
 .ch-info .ch-cash b{color:#00D09C}
 .ch-info .ch-pnl b{font-weight:800}
+.ch-info .ch-book{font-size:9px;color:#666;letter-spacing:.3px}
+.ch-info .ch-book b{font-weight:800;font-size:11px}
 .ch-pnl-v{color:#888}
 .ch-pnl-v.up{color:#00D09C}
 .ch-pnl-v.dn{color:#ff4757}
@@ -206,10 +208,16 @@ select:focus{outline:none;border-color:#00D09C}
 .ch-pos-list{max-height:32vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .ch-tr-list{max-height:26vh;background:#0b0b12}
 .ch-tr{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #12121c}
-.ch-tr-sum{position:sticky;top:0;padding:6px 10px;background:#12121c;border-bottom:1px solid #1a1a28;font-size:10px;font-weight:700;color:#888;letter-spacing:.3px;z-index:1}
-.ch-tr-sum b{font-size:12px;font-weight:800}
-.ch-tr-sum.up b{color:#00D09C}
-.ch-tr-sum.dn b{color:#ff4757}
+.ch-tr-sum{position:sticky;top:0;padding:7px 10px;background:#12121c;border-bottom:1px solid #1a1a28;z-index:1}
+.ch-tr-calc{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;font-size:9px;font-weight:700;color:#666;letter-spacing:.3px;margin-bottom:4px}
+.cc-i{background:#0d0d14;border:1px solid #1a1a28;border-radius:4px;padding:3px 6px;color:#888}
+.cc-i b{font-size:11px;color:#d1d4dc;font-weight:800}
+.cc-i.up b{color:#00D09C}
+.cc-i.dn b{color:#ff4757}
+.cc-op{color:#444;font-weight:900}
+.ch-tr-line{font-size:10px;font-weight:700;text-align:center;letter-spacing:.3px;color:#888}
+.ch-tr-line.up{color:#00D09C}
+.ch-tr-line.dn{color:#ff4757}
 .ch-tag{font-style:normal;font-size:8px;font-weight:900;letter-spacing:.5px;padding:2px 6px;border-radius:3px}
 .ch-tag.win{background:rgba(0,208,156,.15);color:#00D09C;border:1px solid rgba(0,208,156,.4)}
 .ch-tag.loss{background:rgba(255,71,87,.15);color:#ff4757;border:1px solid rgba(255,71,87,.4)}

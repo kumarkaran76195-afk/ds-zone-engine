@@ -3,3 +3,5 @@ node_modules/
 trial-users.json
 trials.json
 paid.json
+sessions.json
+devices.json

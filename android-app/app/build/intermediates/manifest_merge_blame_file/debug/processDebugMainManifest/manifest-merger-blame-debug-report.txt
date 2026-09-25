@@ -5,7 +5,7 @@
 5    android:versionName="1.0" >
 6
 7    <uses-sdk
-8        android:minSdkVersion="24"
+8        android:minSdkVersion="21"
 9        android:targetSdkVersion="34" />
 10
 11    <uses-permission android:name="android.permission.INTERNET" />
@@ -20,7 +20,7 @@
 15        android:allowBackup="true"
 15-->C:\Users\DELL\OneDrive\Desktop\sell\android-app\app\src\main\AndroidManifest.xml:8:9-35
 16        android:debuggable="true"
-17        android:extractNativeLibs="false"
+17        android:extractNativeLibs="true"
 18        android:icon="@drawable/ic_launcher"
 18-->C:\Users\DELL\OneDrive\Desktop\sell\android-app\app\src\main\AndroidManifest.xml:9:9-45
 19        android:label="@string/app_name"

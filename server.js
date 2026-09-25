@@ -65,12 +65,77 @@ function saveTrials() {
 }
 
 function trialInfo(email) {
+  if (paidUsers.has(email)) return { daysLeft: TRIAL_DAYS, expired: false, paid: true };
   const start = trials.get(email);
   if (!start) return { daysLeft: TRIAL_DAYS, expired: false };
   const used = Math.max(0, Date.now() - start);
   const daysLeft = Math.max(0, Math.min(TRIAL_DAYS, TRIAL_DAYS - Math.floor(used / 86400000)));
   return { daysLeft, expired: daysLeft <= 0 };
 }
+
+// ── Paid (verified tick) users ──
+const PAID_FILE = path.join(__dirname, 'paid.json');
+let paidUsers = new Map();   // email -> paidAt ts
+try {
+  if (fs.existsSync(PAID_FILE)) {
+    paidUsers = new Map(Object.entries(JSON.parse(fs.readFileSync(PAID_FILE, 'utf8'))));
+  }
+} catch (e) { console.log('[paid load fail]', e.message); }
+
+function savePaid() {
+  try { fs.writeFileSync(PAID_FILE, JSON.stringify(Object.fromEntries(paidUsers))); }
+  catch (e) { console.log('[paid save fail]', e.message); }
+}
+
+// ── Admin APIs (Karan) ──
+const ADMIN_PASS = process.env.ADMIN_PASS || 'karan@123';
+function adminAuth(req, res, next) {
+  const pass = String(req.headers['x-admin-pass'] || '');
+  if (pass !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Galat password' });
+  next();
+}
+
+app.post('/api/admin/login', (req, res) => {
+  const pass = String(req.body.pass || '');
+  if (pass !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Galat password' });
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/stats', adminAuth, (req, res) => {
+  const now = Date.now();
+  const active = new Set();
+  for (const [, s] of sessions) if (s.exp > now) active.add(s.email);
+  res.json({ ok: true, total: trials.size, paid: paidUsers.size, active: active.size });
+});
+
+app.get('/api/admin/users', adminAuth, (req, res) => {
+  const now = Date.now();
+  const activeEmails = new Set();
+  for (const [, s] of sessions) if (s.exp > now) activeEmails.add(s.email);
+  const list = [];
+  for (const [email, start] of trials) {
+    const ti = trialInfo(email);
+    list.push({ email, since: start, daysLeft: ti.daysLeft, expired: ti.expired, paid: paidUsers.has(email), active: activeEmails.has(email) });
+  }
+  for (const [email] of paidUsers) {
+    if (!trials.has(email)) list.push({ email, since: null, daysLeft: null, expired: false, paid: true, active: activeEmails.has(email) });
+  }
+  list.sort((a, b) => (b.since || 0) - (a.since || 0));
+  res.json({ ok: true, users: list });
+});
+
+app.post('/api/admin/paid', adminAuth, (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const paid = !!req.body.paid;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ ok: false, error: 'Invalid email' });
+  }
+  if (paid) paidUsers.set(email, Date.now());
+  else paidUsers.delete(email);
+  savePaid();
+  console.log(`[admin] ${email} paid=${paid}`);
+  res.json({ ok: true });
+});
 
 async function sendOtpMail(to, code) {
   const brevoKey = process.env.BREVO_API_KEY;

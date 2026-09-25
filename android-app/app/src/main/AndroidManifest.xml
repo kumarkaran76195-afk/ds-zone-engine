@@ -10,7 +10,10 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.DSZone"
         android:usesCleartextTraffic="true">
-        <activity
+                <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-7437798527438695~6714276603" />
+<activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden">

@@ -5,3 +5,15 @@ trials.json
 paid.json
 sessions.json
 devices.json
+
+# android build artifacts (local only, not needed on server)
+android-app/build/
+android-app/app/build/
+android-app/.gradle/
+android-admin/build/
+android-admin/app/build/
+android-admin/.gradle/
+*.apk.bak
+_test.js
+_chain.js
+_oc.js

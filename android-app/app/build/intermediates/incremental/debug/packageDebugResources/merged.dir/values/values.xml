@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="ic_launcher_background">#0A0A0F</color>
-    <string name="app_name">DS Zone Engine</string>
-    <style name="Theme.DSZone" parent="android:Theme.Material.NoActionBar.Fullscreen">
-        <item name="android:windowBackground">#0A0A0F</item>
-        <item name="android:statusBarColor">#0E0E16</item>
-    </style>
-</resources>

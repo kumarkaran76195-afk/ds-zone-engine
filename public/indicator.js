@@ -277,6 +277,14 @@ class DSEngine {
 
       const existing = this.activeByTF[tf];
       if (existing && this._isActive(existing)) {
+        const trendDir = trend ? trend.trend : 'sideways';
+        const againstTrend = (trendDir === 'up' && existing.direction === 'SELL') ||
+                             (trendDir === 'down' && existing.direction === 'BUY');
+        if (againstTrend) {
+          this.activeByTF[tf] = null;
+          this._findNextZone(tf, cls, price, atr, trend, allResults);
+          continue;
+        }
         this._track(existing, price);
         if (!this._isActive(existing)) {
           this._recordHit(tf, existing, existing.status);

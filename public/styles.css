@@ -128,6 +128,14 @@ select:focus{outline:none;border-color:#00D09C}
 .paywall-wa:hover{background:#1fbb59}
 .paywall-num{font-size:14px;color:#d1d4dc;margin-top:14px;font-weight:700;letter-spacing:1.5px}
 
+#buyBanner{position:fixed;left:0;right:0;bottom:0;z-index:9000;background:#0d1512;border-top:1px solid #00D09C;display:none;align-items:center;gap:8px;padding:9px 12px}
+#buyBanner .bb-txt{flex:1;min-width:140px;font-size:12px;color:#d1d4dc}
+#buyBanner .bb-txt b{color:#00D09C}
+#buyBanner a{background:#25D366;color:#fff;padding:8px 14px;border-radius:6px;font-size:11px;font-weight:800;text-decoration:none;letter-spacing:0.5px;white-space:nowrap}
+#buyBanner a:hover{background:#1fbb59}
+#buyBanner button{background:transparent;border:1px solid #252535;color:#666;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px}
+#buyBanner button:hover{border-color:#ff4757;color:#ff4757}
+
 @media (max-width:800px){
   body{overflow:auto}
   #app{height:auto;min-height:100vh}

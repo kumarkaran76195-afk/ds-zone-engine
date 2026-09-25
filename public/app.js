@@ -5,6 +5,7 @@ let sym = 'NIFTY', tf = 5, allC = {}, lastA = null, engine = new DSEngine();
 let mktOpen = false, wsOk = false, chartInitDone = false, pendingInit = false;
 let lastSetupKey = '', livePriceLine = null, lastLTP = 0, lastTrackTime = 0;
 let authed = false;
+let paywallOn = false, dsTrialInfo = null, buyBannerClosed = false;
 
 function isLocalHost() {
   return location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '';
@@ -19,15 +20,27 @@ function hideLogin() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   authed = true;
+  updateBuyBanner();
 }
 
 function loginErr(m) { document.getElementById('loginErr').textContent = m || ''; }
 
 function showPaywall() {
+  paywallOn = true;
+  authed = false;
+  updateBuyBanner();
+  try { if (ws) { ws.onclose = null; ws.close(); } } catch (e) {}
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').style.display = 'none';
   document.getElementById('paywallScreen').style.display = 'flex';
   authed = true;
+}
+
+function updateBuyBanner() {
+  const b = document.getElementById('buyBanner');
+  if (!b) return;
+  const show = !isLocalHost() && !paywallOn && authed && dsTrialInfo && !dsTrialInfo.paid && !buyBannerClosed;
+  b.style.display = show ? 'flex' : 'none';
 }
 
 function getDeviceId() {
@@ -47,6 +60,7 @@ async function initAuth() {
       const r = await fetch('/api/otp/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
       const d = await r.json();
       if (d.ok) {
+        dsTrialInfo = d.trial || null;
         if (d.trial && d.trial.expired) { showPaywall(); return; }
         hideLogin(); startApp(); return;
       }
@@ -85,6 +99,7 @@ async function initAuth() {
       const d = await r.json();
       if (d.ok) {
         localStorage.setItem('ds_token', d.token);
+        dsTrialInfo = d.trial || null;
         if (d.trial && d.trial.expired) { showPaywall(); return; }
         hideLogin();
         startApp();
@@ -106,6 +121,7 @@ function startApp() {
 }
 
 function connect() {
+  if (paywallOn) return;
   try {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + location.host + '/ws');
@@ -481,3 +497,21 @@ setInterval(() => {
   } catch (err) {}
 }, 5000);
 initAuth();
+
+const bbX = document.getElementById('buyBannerX');
+if (bbX) bbX.onclick = () => { buyBannerClosed = true; updateBuyBanner(); };
+
+// Trial auto-close: har 60 sec check — 7 din hue to market apne band
+setInterval(async () => {
+  if (isLocalHost() || !authed || paywallOn) return;
+  const token = localStorage.getItem('ds_token');
+  if (!token) return;
+  try {
+    const r = await fetch('/api/otp/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+    const d = await r.json();
+    if (!d.ok) { localStorage.removeItem('ds_token'); showLogin(); return; }
+    dsTrialInfo = d.trial || null;
+    if (d.trial && d.trial.expired) showPaywall();
+    else updateBuyBanner();
+  } catch (e) {}
+}, 60000);

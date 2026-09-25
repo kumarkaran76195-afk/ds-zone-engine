@@ -43,8 +43,10 @@ const clients = new Set();
 // ── Email OTP Login (APK/Railway only) ──
 const otpStore = new Map();   // email -> { code, exp }
 const sessions = new Map();   // token -> { email, exp }
+const devices = new Map();    // deviceId -> { email, exp }  (1 phone = 1 email)
 const OTP_TTL = 5 * 60 * 1000;
 const SESSION_TTL = 24 * 60 * 60 * 1000;
+const GMAIL_RE = /^[a-z0-9._-]{1,64}@gmail\.com$/;
 
 async function sendOtpMail(to, code) {
   const brevoKey = process.env.BREVO_API_KEY;
@@ -86,8 +88,12 @@ app.post('/api/otp/send', async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ ok: false, error: 'Invalid email' });
     }
+    if (!GMAIL_RE.test(email)) {
+      return res.status(400).json({ ok: false, error: 'Sirf Gmail ID se login ho sakta hai' });
+    }
     const code = String(crypto.randomInt(100000, 1000000));
     otpStore.set(email, { code, exp: Date.now() + OTP_TTL });
+    if (process.env.OTP_DEBUG === '1') console.log('[OTP-DEBUG]', email, code);
     const sent = await sendOtpMail(email, code);
     if (sent) return res.json({ ok: true });
     console.log(`[OTP send fail] ${email}`);
@@ -101,6 +107,10 @@ app.post('/api/otp/send', async (req, res) => {
 app.post('/api/otp/verify', (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const code = String(req.body.otp || '').trim();
+  const deviceId = String(req.body.deviceId || '').slice(0, 64);
+  if (!GMAIL_RE.test(email)) {
+    return res.status(400).json({ ok: false, error: 'Sirf Gmail ID se login ho sakta hai' });
+  }
   const rec = otpStore.get(email);
   if (!rec || rec.exp < Date.now()) {
     otpStore.delete(email);
@@ -109,9 +119,17 @@ app.post('/api/otp/verify', (req, res) => {
   if (rec.code !== code) {
     return res.status(400).json({ ok: false, error: 'Wrong OTP' });
   }
+  if (deviceId) {
+    const dev = devices.get(deviceId);
+    if (dev && dev.exp > Date.now() && dev.email !== email) {
+      otpStore.delete(email);
+      return res.status(403).json({ ok: false, error: 'Is phone par pehle se ek account login hai. Ek phone par ek hi email se login ho sakta hai.' });
+    }
+  }
   otpStore.delete(email);
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { email, exp: Date.now() + SESSION_TTL });
+  if (deviceId) devices.set(deviceId, { email, exp: Date.now() + SESSION_TTL });
   res.json({ ok: true, token });
 });
 

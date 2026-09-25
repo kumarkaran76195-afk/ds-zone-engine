@@ -23,6 +23,15 @@ function hideLogin() {
 
 function loginErr(m) { document.getElementById('loginErr').textContent = m || ''; }
 
+function getDeviceId() {
+  let id = localStorage.getItem('ds_did');
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+    localStorage.setItem('ds_did', id);
+  }
+  return id;
+}
+
 async function initAuth() {
   if (isLocalHost()) { hideLogin(); startApp(); return; }
   const token = localStorage.getItem('ds_token');
@@ -39,10 +48,11 @@ async function initAuth() {
     const email = document.getElementById('loginEmail').value.trim();
     loginErr('');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { loginErr('Valid email daalo'); return; }
+    if (!/@gmail\.com$/i.test(email)) { loginErr('Sirf Gmail ID se login ho sakta hai'); return; }
     const btn = document.getElementById('btnSendOtp');
     btn.disabled = true; btn.textContent = 'SENDING...';
     try {
-      const r = await fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const r = await fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, deviceId: getDeviceId() }) });
       const d = await r.json();
       if (d.ok) {
         document.getElementById('loginStep1').style.display = 'none';
@@ -61,7 +71,7 @@ async function initAuth() {
     const btn = document.getElementById('btnVerifyOtp');
     btn.disabled = true; btn.textContent = 'VERIFYING...';
     try {
-      const r = await fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp }) });
+      const r = await fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp, deviceId: getDeviceId() }) });
       const d = await r.json();
       if (d.ok) {
         localStorage.setItem('ds_token', d.token);

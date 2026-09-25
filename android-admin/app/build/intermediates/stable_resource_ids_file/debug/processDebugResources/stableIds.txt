@@ -1,0 +1,6 @@
+com.karan.admin:style/Theme.DSZone = 0x7f050000
+com.karan.admin:mipmap/ic_launcher = 0x7f030000
+com.karan.admin:drawable/ic_launcher_foreground = 0x7f020001
+com.karan.admin:string/app_name = 0x7f040000
+com.karan.admin:drawable/ic_launcher = 0x7f020000
+com.karan.admin:color/ic_launcher_background = 0x7f010000

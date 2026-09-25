@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.DSZone" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">#0A0A0F</item>
+        <item name="android:statusBarColor">#0E0E16</item>
+    </style>
+</resources>

@@ -47,6 +47,33 @@ const OTP_TTL = 5 * 60 * 1000;
 const SESSION_TTL = 24 * 60 * 60 * 1000;
 
 async function sendOtpMail(to, code) {
+  const brevoKey = process.env.BREVO_API_KEY;
+  if (brevoKey) {
+    try {
+      const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'DS Zone Engine', email: process.env.BREVO_SENDER || 'karanahuja623988@gmail.com' },
+          to: [{ email: to }],
+          subject: 'Your DS Zone Engine Login OTP',
+          textContent: `Your OTP is: ${code}\nValid for 5 minutes. Do not share it.`,
+          htmlContent: `<p>Your OTP is:</p><h2 style="letter-spacing:6px">${code}</h2><p>Valid for 5 minutes. Do not share it.</p>`
+        })
+      });
+      if (r.ok) {
+        console.log(`[OTP] Brevo sent to ${to}`);
+        return true;
+      }
+      const errText = await r.text();
+      console.log(`[OTP Brevo fail] HTTP ${r.status}: ${errText}`);
+    } catch (e) {
+      console.log('[OTP Brevo fail]', e.message);
+    }
+  }
   const resendKey = process.env.RESEND_API_KEY;
   if (resendKey) {
     try {

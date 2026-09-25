@@ -31,7 +31,7 @@
 21-->C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:12:9-44
 22        <activity
 22-->C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:13:9-21:20
-23            android:name="com.dszone.engine.MainActivity"
+23            android:name="com.karan.admin.MainActivity"
 23-->C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:14:13-41
 24            android:configChanges="orientation|screenSize|keyboardHidden"
 24-->C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:16:13-74

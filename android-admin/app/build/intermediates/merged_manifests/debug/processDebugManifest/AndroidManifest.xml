@@ -20,7 +20,7 @@
         android:theme="@style/Theme.DSZone"
         android:usesCleartextTraffic="true" >
         <activity
-            android:name="com.dszone.engine.MainActivity"
+            android:name="com.karan.admin.MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true" >
             <intent-filter>

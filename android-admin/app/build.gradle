@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.dszone.engine'
+    namespace 'com.karan.admin'
     compileSdk 34
 
     defaultConfig {

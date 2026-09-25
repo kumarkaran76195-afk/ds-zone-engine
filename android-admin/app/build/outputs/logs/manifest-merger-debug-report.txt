@@ -35,7 +35,7 @@ INJECTED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\And
 		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:11:9-44
 	android:usesCleartextTraffic
 		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:12:9-44
-activity#com.dszone.engine.MainActivity
+activity#com.karan.admin.MainActivity
 ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:13:9-21:20
 	android:exported
 		ADDED from C:\Users\DELL\OneDrive\Desktop\sell\android-admin\app\src\main\AndroidManifest.xml:15:13-36

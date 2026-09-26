@@ -1,6 +1,6 @@
 /* ─── DS Zone — Live Option Chain + Paper Trading (APK only) ─── */
 (function () {
-  const START_CASH = 100000;
+  const START_CASH = 2000000;
   let cSym = 'NIFTY', cExpiry = '', cData = null, cTimer = null, cLoading = false;
   let cSig = null;
   let paper = loadPaper();
@@ -8,11 +8,38 @@
   function loadPaper() {
     try {
       const j = JSON.parse(localStorage.getItem('ds_paper'));
-      if (j && typeof j.cash === 'number') return { cash: j.cash, pos: j.pos || [], trades: j.trades || [] };
+      if (j && typeof j.cash === 'number') {
+        let start = (typeof j.start === 'number' && j.start > 0) ? j.start : 0;
+        if (!start) {
+          // v1 (1 lakh) -> v2 (20 lakh): P&L preserve rakho
+          j.cash = Math.max(0, START_CASH + (j.cash - 100000));
+          start = START_CASH;
+        }
+        return { cash: j.cash, pos: j.pos || [], trades: j.trades || [], start: start };
+      }
     } catch (e) {}
-    return { cash: START_CASH, pos: [], trades: [] };
+    return { cash: START_CASH, pos: [], trades: [], start: START_CASH };
   }
   function savePaper() { try { localStorage.setItem('ds_paper', JSON.stringify(paper)); } catch (e) {} }
+
+  // ── real market jaisa charges (NSE options): brokerage + STT + exch + SEBI + stamp + GST ──
+  function calcCharges(buyVal, sellVal) {
+    buyVal = buyVal || 0; sellVal = sellVal || 0;
+    const turn = buyVal + sellVal;
+    const brokerage = turn * 0.0003;
+    const stt = sellVal * 0.001;
+    const exch = turn * 0.0000297;
+    const sebi = turn * 0.000001;
+    const stamp = buyVal * 0.00003;
+    const gst = (brokerage + exch + sebi) * 0.18;
+    return { brokerage: brokerage, stt: stt, exch: exch, sebi: sebi, stamp: stamp, gst: gst, total: brokerage + stt + exch + sebi + stamp + gst };
+  }
+
+  function openInvested() {
+    let s = 0;
+    for (const p of paper.pos) s += p.entry * p.qty + (p.chg || 0);
+    return s;
+  }
 
   function fmt(n) { return (Math.round(n * 100) / 100).toLocaleString('en-IN'); }
   function fmt0(n) { return Math.round(n).toLocaleString('en-IN'); }
@@ -213,13 +240,18 @@
     ord.lots = lots;
     const qty = lots * (cData ? cData.lot : 1);
     const cost = ord.px * qty;
+    const chg = calcCharges(cost, 0).total;
     $('ordQty').textContent = qty + ' qty (' + lots + ' lot)';
     $('ordCost').textContent = '₹' + fmt(cost);
+    if ($('ordChg')) $('ordChg').textContent = '₹' + fmt(chg);
+    if ($('ordTotal')) $('ordTotal').textContent = '₹' + fmt(cost + chg);
     $('ordCash').textContent = '₹' + fmt(paper.cash);
-    const ok = cost <= paper.cash;
+    const ok = (cost + chg) <= paper.cash;
     $('ordOk').disabled = !ok;
     $('ordOk').textContent = ok ? 'CONFIRM BUY' : 'INSUFFICIENT CASH';
-    $('ordNote').textContent = ok ? '' : 'Demo cash kam hai — RESET karo';
+    $('ordNote').textContent = ok
+      ? 'Buy charge ₹' + fmt(chg) + ' + exit par aur lagega (brokerage, STT, GST)'
+      : 'Demo cash kam hai — RESET karo';
   }
   function closeOrder() { ord = null; $('orderSheet').style.display = 'none'; $('chainBack').style.display = 'none'; }
 
@@ -227,12 +259,13 @@
     if (!ord || !cData) return;
     const qty = ord.lots * cData.lot;
     const cost = ord.px * qty;
-    if (cost > paper.cash) return;
-    paper.cash -= cost;
+    const chg = calcCharges(cost, 0).total;
+    if (cost + chg > paper.cash) return;
+    paper.cash -= (cost + chg);
     paper.pos.push({
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       sym: cSym, expiry: cExpiry, strike: ord.strike, side: ord.side,
-      lots: ord.lots, qty, entry: ord.px, ltp: ord.px, entryTs: Date.now()
+      lots: ord.lots, qty, entry: ord.px, ltp: ord.px, chg: chg, entryTs: Date.now()
     });
     savePaper();
     closeOrder();
@@ -287,12 +320,15 @@
     const i = paper.pos.findIndex(p => p.id === id);
     if (i < 0) return;
     const p = paper.pos[i];
-    paper.cash += p.ltp * p.qty;
+    const sellChg = calcCharges(0, p.ltp * p.qty).total;
+    const net = p.ltp * p.qty - sellChg;
+    paper.cash += net;
     paper.pos.splice(i, 1);
     paper.trades = paper.trades || [];
     paper.trades.unshift({
       sym: p.sym, strike: p.strike, side: p.side, lots: p.lots, qty: p.qty,
-      entry: p.entry, exit: p.ltp, pnl: (p.ltp - p.entry) * p.qty,
+      entry: p.entry, exit: p.ltp, chg: (p.chg || 0) + sellChg,
+      pnl: (p.ltp - p.entry) * p.qty - ((p.chg || 0) + sellChg),
       entryTs: p.entryTs, exitTs: Date.now()
     });
     if (paper.trades.length > 100) paper.trades.length = 100;
@@ -321,26 +357,31 @@
       box.innerHTML = '<div class="ch-none">Abhi koi trade close nahi — EXIT dabao, yahan profit/loss dikhega</div>';
       return;
     }
-    let wins = 0, losses = 0, tot = 0, prof = 0, lossSum = 0, h = '';
+    let wins = 0, losses = 0, tot = 0, prof = 0, lossSum = 0, chgTot = 0, h = '';
     for (const x of t) {
       if (x.pnl >= 0) { wins++; prof += x.pnl; } else { losses++; lossSum += -x.pnl; }
       tot += x.pnl;
+      chgTot += (x.chg || 0);
       const win = x.pnl >= 0;
       h += '<div class="ch-tr">' +
         '<div class="ch-pos-l"><b>' + x.sym + ' ' + x.strike + ' ' + x.side + '</b>' +
-        '<span>' + x.qty + ' qty · IN ₹' + fmt(x.entry) + ' → OUT ₹' + fmt(x.exit) + ' · ' + timeAgo(x.exitTs) + '</span></div>' +
+        '<span>' + x.qty + ' qty · IN ₹' + fmt(x.entry) + ' → OUT ₹' + fmt(x.exit) + ' · ' + timeAgo(x.exitTs) + '</span>' +
+        (x.chg ? '<span class="ch-chg">Charges ₹' + fmt(x.chg) + ' (brokerage+STT+GST)</span>' : '') + '</div>' +
         '<div class="ch-pos-r ' + (win ? 'up' : 'dn') + '">' +
         '<b>' + (win ? '+' : '-') + '₹' + fmt(Math.abs(x.pnl)) + '</b>' +
         '<em class="ch-tag ' + (win ? 'win' : 'loss') + '">' + (win ? 'PROFIT' : 'LOSS') + '</em></div></div>';
     }
+    const start = paper.start || START_CASH;
     h = '<div class="ch-tr-sum">' +
       '<div class="ch-tr-calc ' + (tot >= 0 ? 'up' : 'dn') + '">' +
-      '<span class="cc-i">START <b>₹' + fmt(START_CASH) + '</b></span>' +
+      '<span class="cc-i">START <b>₹' + fmt(start) + '</b></span>' +
       '<span class="cc-op">+</span><span class="cc-i up">PROFIT <b>₹' + fmt(prof) + '</b></span>' +
       '<span class="cc-op">−</span><span class="cc-i dn">LOSS <b>₹' + fmt(lossSum) + '</b></span>' +
       '<span class="cc-op">=</span><span class="cc-i">DEMO <b>₹' + fmt(paper.cash) + '</b></span>' +
       '</div>' +
-      '<div class="ch-tr-line ' + (tot >= 0 ? 'up' : 'dn') + '">' + t.length + ' TRADES · ' + wins + ' PROFIT / ' + losses + ' LOSS · TOTAL ' + (tot >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(tot)) + '</div>' +
+      '<div class="ch-tr-line ' + (tot >= 0 ? 'up' : 'dn') + '">' +
+      wins + ' WIN ✅ / ' + losses + ' LOSS ❌ · TOTAL ' + (tot >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(tot)) +
+      (chgTot ? ' · CHARGES ₹' + fmt(chgTot) : '') + '</div>' +
       '</div>' + h;
     box.innerHTML = h;
   }
@@ -349,9 +390,9 @@
     const el = $('chainNet');
     if (!el) return;
     const t = paper.trades || [];
-    let tot = 0;
-    for (const x of t) tot += x.pnl;
-    el.textContent = (tot >= 0 ? '+₹' : '-₹') + fmt(Math.abs(tot));
+    let tot = 0, wins = 0, losses = 0;
+    for (const x of t) { tot += x.pnl; if (x.pnl >= 0) wins++; else losses++; }
+    el.textContent = t.length ? (tot >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(tot)) + ' · ' + wins + 'W/' + losses + 'L' : '₹0';
     el.className = 'ch-pnl-v ' + (tot >= 0 ? 'up' : 'dn');
   }
 
@@ -370,8 +411,8 @@
   }
 
   function resetWallet() {
-    if (!confirm('Demo wallet reset karke ₹1,00,000 mil jayega? Trade history bhi delete hogi.')) return;
-    paper = { cash: START_CASH, pos: [], trades: [] };
+    if (!confirm('Demo wallet reset karke ₹20,00,000 mil jayega? Trade history bhi delete hogi.')) return;
+    paper = { cash: START_CASH, pos: [], trades: [], start: START_CASH };
     savePaper();
     renderWallet(); renderPositions(); renderTrades(); renderNet(); markPositions();
   }

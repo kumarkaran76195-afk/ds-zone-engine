@@ -226,6 +226,7 @@ select:focus{outline:none;border-color:#00D09C}
 .ch-pos-l{display:flex;flex-direction:column;gap:2px;min-width:0}
 .ch-pos-l b{font-size:12px;color:#d1d4dc}
 .ch-pos-l span{font-size:10px;color:#666}
+.ch-chg{font-size:9px!important;color:#ffc143!important;letter-spacing:.2px}
 .ch-pos-r{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .ch-pos-r b{font-size:13px;font-weight:800}
 .ch-pos-r.up b{color:#00D09C}

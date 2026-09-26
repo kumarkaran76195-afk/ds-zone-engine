@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -165,7 +165,7 @@
   <div class="ch-info">
     <span id="chainSpot">--</span>
     <span id="chainLot">LOT --</span>
-    <span class="ch-cash">DEMO: <b id="chainCash">₹1,00,000</b></span>
+    <span class="ch-cash">DEMO: <b id="chainCash">₹20,00,000</b></span>
     <span id="chainCnt">0 POS</span>
     <span class="ch-pnl">P&L <b id="chainPnl" class="ch-pnl-v">₹0</b></span>
     <span class="ch-book">TOTAL P&L <b id="chainNet" class="ch-pnl-v">₹0</b></span>
@@ -186,7 +186,9 @@
         <div class="os-i"><span>PRICE</span><b id="ordPx">--</b></div>
         <div class="os-i"><span>LOT SIZE</span><b id="ordQty">--</b></div>
         <div class="os-i"><span>COST</span><b id="ordCost">--</b></div>
+        <div class="os-i"><span>CHARGES</span><b id="ordChg">--</b></div>
         <div class="os-i"><span>DEMO CASH</span><b id="ordCash">--</b></div>
+        <div class="os-i"><span>TOTAL DEBIT</span><b id="ordTotal">--</b></div>
       </div>
       <div class="os-lots"><label>LOTS</label><input type="number" id="ordLots" value="1" min="1" max="100"></div>
       <div class="os-note" id="ordNote"></div>
@@ -197,6 +199,6 @@
 </div>
 <script src="indicator.js?v=6"></script>
 <script src="app.js?v=11"></script>
-<script src="chain.js?v=4"></script>
+<script src="chain.js?v=5"></script>
 </body>
 </html>

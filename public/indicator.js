@@ -173,8 +173,53 @@ class DSEngine {
     this.capital = 100000;
     this.riskPct = 1;
     this.history = this._loadHistory();
+    this.usedZones = this._loadUsedZones();
+    this._nearbyNote = null;
   }
   setAccount(c, p) { this.capital = c; this.riskPct = p; }
+
+  _loadUsedZones() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('ds_used_zones') || '{}');
+      const now = Date.now(), out = {};
+      for (const k of Object.keys(raw)) {
+        if (now - (raw[k] || 0) < 7 * 86400000) out[k] = raw[k];
+      }
+      const keys = Object.keys(out);
+      if (keys.length > 300) {
+        keys.sort((a, b) => out[b] - out[a]);
+        const trimmed = {};
+        for (const k of keys.slice(0, 300)) trimmed[k] = out[k];
+        return trimmed;
+      }
+      return out;
+    } catch { return {}; }
+  }
+  _saveUsedZones() {
+    try {
+      const now = Date.now();
+      const keys = Object.keys(this.usedZones);
+      if (keys.length > 300) {
+        keys.sort((a, b) => this.usedZones[b] - this.usedZones[a]);
+        const t = {};
+        for (const k of keys.slice(0, 300)) t[k] = this.usedZones[k];
+        this.usedZones = t;
+      }
+      for (const k of Object.keys(this.usedZones)) {
+        if (now - (this.usedZones[k] || 0) >= 7 * 86400000) delete this.usedZones[k];
+      }
+      localStorage.setItem('ds_used_zones', JSON.stringify(this.usedZones));
+    } catch {}
+  }
+  _zoneKey(z) {
+    return (z.type || z.zoneType) + '|' + Math.round(z.proximal * 10) / 10 + '|' + Math.round(z.distal * 10) / 10 + '|' + z.zoneTime;
+  }
+  _markZoneUsed(z) {
+    const k = this._zoneKey(z);
+    if (this.usedZones[k]) return false;
+    this.usedZones[k] = Date.now();
+    return true;
+  }
 
   _loadHistory() {
     try { return JSON.parse(localStorage.getItem('ds_history') || '[]'); } catch { return []; }
@@ -182,6 +227,10 @@ class DSEngine {
   _saveHistory() { try { localStorage.setItem('ds_history', JSON.stringify(this.history)); } catch {} }
 
   _recordHit(tf, setup, status) {
+    if (setup.zoneType && setup.zoneTime != null) {
+      this._markZoneUsed({ zoneType: setup.zoneType, proximal: setup.proximal, distal: setup.distal, zoneTime: setup.zoneTime });
+      this._saveUsedZones();
+    }
     const now = new Date();
     const dateKey = now.toISOString().slice(0, 10);
     const timeStr = now.toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -213,8 +262,23 @@ class DSEngine {
   _findNearbyZones(cls, price, currentAtr, trend, maxAtrDist) {
     const zones = ZoneEngine.detect(cls);
     ZoneEngine.markFreshness(zones, cls);
-    const valid = zones.filter(z => z.fresh || z.tested === 1);
-    if (!valid.length) return [];
+    this._nearbyNote = null;
+    let testedCount = 0;
+    const valid = [];
+    for (const z of zones) {
+      if (this.usedZones[this._zoneKey(z)]) { testedCount++; continue; }
+      if (!z.fresh) {
+        if (z.tested >= 1) this._markZoneUsed(z);
+        testedCount++;
+        continue;
+      }
+      valid.push(z);
+    }
+    if (testedCount) this._saveUsedZones();
+    if (!valid.length) {
+      if (testedCount) this._nearbyNote = 'WAIT — Zone test ho chuka hai, fresh zone ka wait karo';
+      return [];
+    }
 
     const trendDir = trend ? trend.trend : 'sideways';
     const trendFiltered = valid.filter(z => {
@@ -228,12 +292,14 @@ class DSEngine {
     trendFiltered.forEach(z => { z.tradeScore = TradeScorer.score(z, trend, price, currentAtr); });
     trendFiltered.sort((a, b) => b.tradeScore.score - a.tradeScore.score);
     const nearby = [];
+    let farCount = 0;
     for (const z of trendFiltered) {
       const dist = Math.abs(z.proximal - price);
-      if (maxAtrDist > 0 && dist > currentAtr * maxAtrDist) continue;
+      if (maxAtrDist > 0 && dist > currentAtr * maxAtrDist) { farCount++; continue; }
       nearby.push(z);
       if (nearby.length >= 5) break;
     }
+    if (!nearby.length && farCount) this._nearbyNote = 'WAIT — Fresh zone ATR se door hai, paas ka wait karo';
     return nearby;
   }
 
@@ -318,7 +384,8 @@ class DSEngine {
     if (!nearbyZones.length) {
       const trendDir = trend ? trend.trend : 'sideways';
       let reason = 'WAIT';
-      if (trendDir === 'down') reason = 'WAIT — Trend DOWN hai, BUY zone allowed nahi';
+      if (this._nearbyNote) reason = this._nearbyNote;
+      else if (trendDir === 'down') reason = 'WAIT — Trend DOWN hai, BUY zone allowed nahi';
       else if (trendDir === 'up') reason = 'WAIT — Trend UP hai, SELL zone allowed nahi';
       else reason = 'WAIT — Trend aligned zone nahi mila';
       allResults[tf] = this._noResult(tf, reason, price, trend, atr);

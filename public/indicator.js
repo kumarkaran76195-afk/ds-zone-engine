@@ -281,6 +281,10 @@ class DSEngine {
     }
 
     const trendDir = trend ? trend.trend : 'sideways';
+    if (trendDir === 'sideways') {
+      this._nearbyNote = 'WAIT — Sideways trend, koi zone allowed nahi';
+      return [];
+    }
     const trendFiltered = valid.filter(z => {
       if (trendDir === 'down' && z.type === 'demand') return false;
       if (trendDir === 'up' && z.type === 'supply') return false;
@@ -345,7 +349,8 @@ class DSEngine {
       if (existing && this._isActive(existing)) {
         const trendDir = trend ? trend.trend : 'sideways';
         const againstTrend = (trendDir === 'up' && existing.direction === 'SELL') ||
-                             (trendDir === 'down' && existing.direction === 'BUY');
+                             (trendDir === 'down' && existing.direction === 'BUY') ||
+                             trendDir === 'sideways';
         if (againstTrend) {
           this.activeByTF[tf] = null;
           this._findNextZone(tf, cls, price, atr, trend, allResults);

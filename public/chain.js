@@ -116,7 +116,7 @@
     let setupStrike = null;
     if (a && sameSym) {
       const s = a.activeSetup;
-      if (s && (s.status === 'WAITING' || s.status === 'ENTRY_TRIGGERED')) {
+      if (s && (s.status === 'WAITING' || s.status === 'ARMED' || s.status === 'ENTRY_TRIGGERED')) {
         if (s.direction === 'BUY') ceV += 2; else peV += 2;
         why.push('SETUP ' + s.direction + ' ' + s.zoneTF + 'm');
         const step = j.sym === 'NIFTY' ? 50 : 100;

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="stylesheet" href="styles.css?v=16">
+<link rel="stylesheet" href="styles.css?v=17">
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -78,7 +78,7 @@
     <div class="chart-area">
       <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY — NO BUY/SELL RECOMMENDATION — LEARNING KARO TRADE MAT KARO</div>
       <div id="chart" style="position:absolute;top:28px;left:0;right:0;bottom:0"></div>
-      <div class="labels" id="labels" style="top:34px"></div>
+      <div class="labels" id="labels" style="top:28px"></div>
     </div>
     <div class="panel" id="panel">
       <div class="p-head"><span id="pTitle">SCANNING</span><span class="badge" id="pBadge">--</span></div>
@@ -137,6 +137,7 @@
         <div class="sum-row">
           <div class="si"><span class="si-l">TREND</span><span class="si-v" id="sumTrend">--</span></div>
           <div class="si"><span class="si-l">SMA50</span><span class="si-v" id="sumSma">--</span></div>
+          <div class="si"><span class="si-l">CURVE</span><span class="si-v" id="sumCurve">--</span></div>
         </div>
         <div class="tf-zones" id="tfZones" style="margin-top:8px"></div>
         <div class="completed-section" id="completedSection" style="margin-top:8px;max-height:180px;overflow-y:auto"></div>
@@ -197,8 +198,8 @@
     </div>
   </div>
 </div>
-<script src="indicator.js?v=8"></script>
-<script src="app.js?v=11"></script>
-<script src="chain.js?v=5"></script>
+<script src="indicator.js?v=18"></script>
+<script src="app.js?v=19"></script>
+<script src="chain.js?v=6"></script>
 </body>
 </html>

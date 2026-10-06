@@ -1,6 +1,6 @@
 /* ─── DS Zone Engine v1.0 — Frontend ──────────────────────── */
 let ws, chart, candleS, volS, smaS;
-let zoneLines = [], labels = [];
+let zoneLines = [], labels = [], zoneBoxLines = [], lastZoneKey = '';
 let sym = 'NIFTY', tf = 5, allC = {}, lastA = null, engine = new DSEngine();
 let mktOpen = false, wsOk = false, chartInitDone = false, pendingInit = false;
 let lastSetupKey = '', livePriceLine = null, lastLTP = 0, lastTrackTime = 0;
@@ -251,6 +251,11 @@ function tryInitChart() {
       ts.fitContent();
     }
     chartInitDone = true;
+    // chart init hone ke baad overlays wapas draw karo (warna boxes/labels kabhi nahi aate)
+    if (lastA && lastA.activeSetup) {
+      try { drawZoneOnChart(lastA.activeSetup); } catch (e) {}
+    }
+    if (chartInitDone) syncFreshZones();
     debugLog('Chart initialized OK! ' + w + 'x' + h + ' candles=' + candles.length);
     new ResizeObserver(() => { if (chart && el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }).observe(el);
   } catch (e) {
@@ -298,11 +303,25 @@ function runAnalysis() {
 
 function setupKey(s) { return s ? s.direction + '|' + s.zoneTF + '|' + s.entry.toFixed(2) + '|' + s.stopLoss.toFixed(2) + '|' + s.status : ''; }
 
+// panel labels: WAITING/ARMED → WAITING, ENTRY_TRIGGERED → ENTRY
+function stLabel(st) {
+  if (st === 'ARMED') return 'WAITING';
+  if (st === 'ENTRY_TRIGGERED') return 'ENTRY';
+  return String(st || '--').replace(/_/g, ' ');
+}
+
 function updAnalysis(a) {
   if (!a) return; lastA = a;
   const trendEl = document.getElementById('sumTrend');
-  if (a.t1) { trendEl.textContent = a.t1.trend.toUpperCase(); trendEl.className = 'si-v ' + (a.t1.trend === 'up' ? 'up' : a.t1.trend === 'down' ? 'dn' : 'fl'); }
+  if (a.t1) { trendEl.textContent = a.t1.trend.toUpperCase(); trendEl.className = 'si-v ' + (a.t1.trend === 'up' ? 'up' : a.t1.trend === 'down' ? 'dn' : 'fl'); trendEl.title = '50 SMA clock: ' + (a.t1.clock || '3'); }
   if (a.sma50 != null) document.getElementById('sumSma').textContent = a.sma50.toFixed(1);
+  const cvEl = document.getElementById('sumCurve');
+  if (cvEl && a.location) {
+    const L = a.location;
+    cvEl.textContent = L.pct != null ? L.pos.replace(' ON CURVE', '') + ' ' + L.pct + '%' : L.pos;
+    cvEl.className = 'si-v ' + (L.action === 'BUY' ? 'up' : L.action === 'SELL' ? 'dn' : 'fl');
+    cvEl.title = 'Curve action: ' + L.action;
+  }
 
   const tfs = ['1m','3m','5m','15m','30m'], atf = a.allTF || {};
   tfs.forEach((tfk, i) => {
@@ -317,15 +336,18 @@ function updAnalysis(a) {
     let html = '<div style="font-size:10px;color:#666;letter-spacing:1px;margin-bottom:4px">ALL TF ZONES</div>';
     for (const tfk of tfs) {
       const r = atf[tfk];
+      const fz = (r && r.freshCount) || 0;
+      const tz = (r && r.allFreshZones) || 0;
       if (r && r.activeSetup) {
         const s = r.activeSetup, col = s.direction === 'BUY' ? '#00D09C' : '#ff4757';
-        const stCol = {WAITING:'#f1c40f',ENTRY_TRIGGERED:'#3498db',TARGET_HIT:'#00D09C',STOP_LOSS_HIT:'#ff4757',INVALIDATED:'#888'}[s.status] || '#888';
+        const stCol = {WAITING:'#f1c40f',ARMED:'#e67e22',ENTRY_TRIGGERED:'#3498db',TARGET_HIT:'#00D09C',STOP_LOSS_HIT:'#ff4757',INVALIDATED:'#888'}[s.status] || '#888';
         html += '<div style="padding:4px 0;border-bottom:1px solid #1a1a2e;font-size:10px">';
         html += '<div style="display:flex;align-items:center;gap:4px">';
         html += '<span style="width:26px;font-weight:700;color:' + col + '">' + tfk + '</span>';
         html += '<span style="width:28px;color:' + col + ';font-weight:700">' + s.direction + '</span>';
         html += '<span style="width:26px;color:#888">' + s.pattern + '</span>';
-        html += '<span style="color:' + stCol + ';font-weight:600;font-size:9px">' + s.status.replace(/_/g,' ').substring(0,8) + '</span>';
+        html += '<span style="color:' + stCol + ';font-weight:600;font-size:9px">' + stLabel(s.status).substring(0,8) + '</span>';
+        html += '<span style="margin-left:auto;color:#00D09C;font-size:9px">' + fz + 'F/' + tz + 'Z</span>';
         html += '</div>';
         html += '<div style="display:flex;gap:8px;margin-top:2px;font-size:9px;font-family:monospace">';
         html += '<span style="color:#00D09C">E:' + s.entry.toFixed(1) + '</span>';
@@ -333,7 +355,9 @@ function updAnalysis(a) {
         html += '<span style="color:#59c2ff">T:' + s.target.toFixed(1) + '</span>';
         html += '</div></div>';
       } else {
-        html += '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #1a1a2e;font-size:11px"><span style="width:26px;font-weight:700;color:#555">' + tfk + '</span><span style="color:#555">No zone</span></div>';
+        const fCol = tz ? '#00D09C' : '#555';
+        const fTxt = tz ? fz + ' fresh / ' + tz + ' zone' : 'No zone';
+        html += '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #1a1a2e;font-size:11px"><span style="width:26px;font-weight:700;color:' + (tz ? '#00D09C' : '#555') + '">' + tfk + '</span><span style="color:' + fCol + '">' + fTxt + '</span></div>';
       }
     }
     tfZoneEl.innerHTML = html;
@@ -374,31 +398,39 @@ function updAnalysis(a) {
     document.getElementById('sSL').textContent = Number(s.stopLoss).toFixed(2);
     document.getElementById('sTgt').textContent = Number(s.target).toFixed(2);
     document.getElementById('sRR').textContent = '1:' + Number(s.riskReward).toFixed(1);
-    document.getElementById('sScore').textContent = (s.zoneScore || 0) + '/14';
+    document.getElementById('sScore').textContent = (s.zoneScore || 0) + '/' + (s.maxScore || 11);
     document.getElementById('sET').textContent = 'Type ' + (s.entryType || 3);
+    document.getElementById('sET').title = s.entryRule || '';
     document.getElementById('sStr').textContent = (s.zoneStrength || 'normal').toUpperCase().replace('_', ' ');
     document.getElementById('sFr').textContent = (s.zoneFreshness || 'fresh').replace('_', ' ').toUpperCase();
     document.getElementById('sDist').textContent = s.zoneDist ? Number(s.zoneDist).toFixed(1) : '--';
     document.getElementById('sProx').textContent = Number(s.proximal).toFixed(2);
     document.getElementById('sDistal').textContent = Number(s.distal).toFixed(2);
-    const tfSum = tfs.map(t => { const r = atf[t]; return t + ':' + (r && r.activeSetup ? r.activeSetup.status.substring(0,6) : r && r.reason ? r.reason.substring(0,6) : '--'); }).join(' | ');
-    document.getElementById('tfSum').textContent = tfSum;
+    const tfSum = tfs.map(t => { const r = atf[t]; return t + ':' + (r && r.activeSetup ? stLabel(r.activeSetup.status) : r && r.reason ? r.reason.substring(0,6) : '--'); }).join(' | ');
+    const notes = [];
+    if (s.monthLimit) notes.push('<span style="color:#ff4757">10 trades/month limit (PDF) — entry band, sirf monitoring</span>');
+    if (s.staleTarget) notes.push('<span style="color:#f1c40f">Target LTP ke peeche — retest ka wait</span>');
+    document.getElementById('tfSum').innerHTML = (notes.length ? notes.join('<br>') + '<br>' : '') + tfSum;
     const stEl = document.getElementById('sStatus');
-    stEl.textContent = s.status.replace(/_/g, ' ');
-    stEl.className = 's-val ' + ({WAITING:'wait',ENTRY_TRIGGERED:'entry',TARGET_HIT:'tgt',STOP_LOSS_HIT:'sl'}[s.status] || 'inval');
+    stEl.textContent = stLabel(s.status);
+    stEl.className = 's-val ' + ({WAITING:'wait',ARMED:'wait',ENTRY_TRIGGERED:'entry',TARGET_HIT:'tgt',STOP_LOSS_HIT:'sl'}[s.status] || 'inval');
     const r = s.risk || {};
     document.getElementById('rPct').textContent = (r.riskPercent || 1) + '%';
     document.getElementById('rAmt').textContent = r.riskAmount ? 'Rs.' + r.riskAmount.toFixed(0) : '--';
     document.getElementById('rQty').textContent = r.quantity || '--';
     document.getElementById('rRPU').textContent = r.riskPerUnit ? Number(r.riskPerUnit).toFixed(2) : '--';
     document.getElementById('pTitle').textContent = s.direction + ' ' + s.pattern;
-    document.getElementById('pBadge').textContent = s.status.replace(/_/g, ' ');
+    document.getElementById('pBadge').textContent = stLabel(s.status);
     document.getElementById('pBadge').className = 'badge ' + s.direction.toLowerCase();
-    if (setupChanged && chartInitDone) drawZoneOnChart(s);
+    if (setupChanged || !zoneLines.length) { if (chartInitDone) drawZoneOnChart(s); }
   } else {
     document.getElementById('noSetup').style.display = 'flex';
     document.getElementById('setupInfo').style.display = 'none';
     const reason = a.reason || '';
+    const zs = (a.allZonesByTF && a.allZonesByTF[tf + 'm']) || [];
+    const fz = zs.filter(z => z.fresh).length;
+    if (zs.length) document.querySelector('#noSetup .ns-sub').textContent = fz + ' fresh / ' + zs.length + ' zone mile — chart par draw ho rahe hain';
+    else document.querySelector('#noSetup .ns-sub').textContent = 'Waiting for valid zone structure';
     if (reason.includes('Trend DOWN')) {
       document.getElementById('pTitle').textContent = 'WAIT — Trend DOWN';
       document.getElementById('pBadge').textContent = 'WAIT';
@@ -418,6 +450,55 @@ function updAnalysis(a) {
     }
     if (setupChanged) clearAllOverlays();
   }
+  if (chartInitDone) syncFreshZones();
+}
+
+function freshZoneKey(zs) {
+  return zs.map(z => z.type + '|' + Math.round(z.proximal * 10) + '|' + Math.round(z.distal * 10) + '|' + z.zoneTime).join(';');
+}
+
+function clearZoneBoxes() {
+  zoneBoxLines.forEach(s => { try { chart.removeSeries(s); } catch (e) {} });
+  zoneBoxLines = [];
+}
+
+function syncFreshZones() {
+  if (!chart || !chartInitDone) return;
+  let zs = (lastA && lastA.allZonesByTF && lastA.allZonesByTF[tf + 'm']) || [];
+  // sirf paas ke zones (5 ATR) max 10 — warna chart stripy ho jata hai
+  const ltp = (lastA && lastA.price) || 0, atrv = (lastA && lastA.atr) || 0;
+  if (ltp && atrv) zs = zs.filter(z => Math.abs(z.proximal - ltp) <= atrv * 5);
+  zs = zs.slice(0, 10);
+  const k = freshZoneKey(zs);
+  if (k === lastZoneKey && zoneBoxLines.length) return;
+  clearZoneBoxes();
+  lastZoneKey = k;
+  if (!zs.length) return;
+  const candles = allC[sym + '_' + tf] || [];
+  if (!candles.length) return;
+  const zEnd = Math.floor(candles[candles.length - 1].time / 1000) + 900;
+  zs.forEach(z => {
+    const t0 = Math.floor(z.zoneTime / 1000);
+    if (!isFinite(t0) || t0 <= 0 || t0 >= zEnd) return;
+    const isD = z.type === 'demand';
+    const auth = z.authentic !== false;   // PDF: non-authentic zone = grey dashed
+    const fresh = !!z.fresh;
+    const col = isD ? '0,208,156' : '255,71,87';
+    try {
+      const s = chart.addBaselineSeries({
+        topColor: !auth ? 'rgba(140,140,140,0.06)' : fresh ? 'rgba(' + col + ',0.12)' : 'rgba(' + col + ',0.05)',
+        bottomColor: !auth ? 'rgba(140,140,140,0.06)' : fresh ? 'rgba(' + col + ',0.12)' : 'rgba(' + col + ',0.05)',
+        lineColor: !auth ? 'rgba(140,140,140,0.5)' : fresh ? 'rgba(' + col + ',0.7)' : 'rgba(' + col + ',0.3)',
+        baseLineColor: 'transparent',
+        lineWidth: 1,
+        lineStyle: (auth && fresh) ? 0 : 2,
+        baseValue: { type: 'price', value: z.distal },
+        priceLineVisible: false, lastValueVisible: false
+      });
+      s.setData([{ time: t0, value: z.proximal }, { time: zEnd, value: z.proximal }]);
+      zoneBoxLines.push(s);
+    } catch (e) {}
+  });
 }
 
 function drawZoneOnChart(s) {
@@ -427,28 +508,50 @@ function drawZoneOnChart(s) {
   if (!candles.length) return;
   const isBuy = s.direction === 'BUY';
   const lastT = candles[candles.length - 1].time / 1000;
-  const zStart = lastT - 3600, zEnd = lastT + 1800;
+  const firstT = candles[0].time / 1000;
+  const zStart = Math.min(firstT, lastT - 3600), zEnd = lastT + 1800;
 
-  try {
-    const mkLine = (col, w, st) => { const l = chart.addLineSeries({ color: col, lineWidth: w, lineStyle: st||0, priceLineVisible: false, lastValueVisible: false }); zoneLines.push(l); return l; };
-    const mkArea = (tC, bC) => { const a = chart.addAreaSeries({ topColor: tC, bottomColor: bC, lineColor: 'transparent', lineWidth: 0, priceLineVisible: false, lastValueVisible: false }); zoneLines.push(a); return a; };
+  const mk = (fn) => { try { fn(); } catch (e) { try { debugLog('overlay fail: ' + e.message); } catch (e2) {} } };
 
-    const slTop = Math.max(s.entry, s.stopLoss), slBot = Math.min(s.entry, s.stopLoss);
-    const tgTop = Math.max(s.entry, s.target), tgBot = Math.min(s.entry, s.target);
+  const slTop = Math.max(s.entry, s.stopLoss), slBot = Math.min(s.entry, s.stopLoss);
+  const tgTop = Math.max(s.entry, s.target), tgBot = Math.min(s.entry, s.target);
 
-    mkArea('rgba(255,71,87,0.25)','rgba(255,71,87,0.08)').setData([{time:zStart,value:slTop},{time:zEnd,value:slTop}]);
-    mkArea('rgba(255,71,87,0.25)','rgba(255,71,87,0.08)').setData([{time:zStart,value:slBot},{time:zEnd,value:slBot}]);
-    mkArea('rgba(0,208,156,0.25)','rgba(0,208,156,0.08)').setData([{time:zStart,value:tgTop},{time:zEnd,value:tgTop}]);
-    mkArea('rgba(0,208,156,0.25)','rgba(0,208,156,0.08)').setData([{time:zStart,value:tgBot},{time:zEnd,value:tgBot}]);
+  // RED box: entry → stop loss | GREEN box: entry → target (baseline fill, fallback area)
+  const mkBox = (lo, hi, col) => mk(() => {
+    if (!(hi > lo)) return;
+    let b;
+    try {
+      b = chart.addBaselineSeries({
+        topColor: col, bottomColor: 'transparent', lineColor: 'transparent', lineWidth: 0,
+        baseLineColor: 'transparent', baseValue: { type: 'price', value: lo },
+        priceLineVisible: false, lastValueVisible: false
+      });
+    } catch (e1) {
+      b = chart.addAreaSeries({
+        topColor: col, bottomColor: 'rgba(0,0,0,0)', lineColor: 'transparent', lineWidth: 0,
+        baseValue: { type: 'price', value: lo }, priceLineVisible: false, lastValueVisible: false
+      });
+    }
+    b.setData([{ time: zStart, value: hi }, { time: zEnd, value: hi }]);
+    zoneLines.push(b);
+  });
+  mkBox(slBot, slTop, 'rgba(255,71,87,0.30)');   // entry se SL tak laal
+  mkBox(tgBot, tgTop, 'rgba(0,208,156,0.30)');   // entry se target tak hara
 
-    mkLine('#ff4757',2).setData([{time:zStart,value:s.stopLoss},{time:zEnd,value:s.stopLoss}]);
-    mkLine('#00D09C',2).setData([{time:zStart,value:s.entry},{time:zEnd,value:s.entry}]);
-    mkLine('#59c2ff',2).setData([{time:zStart,value:s.target},{time:zEnd,value:s.target}]);
+  const line = (val, col, w) => mk(() => {
+    const l = chart.addLineSeries({ color: col, lineWidth: w, priceLineVisible: false, lastValueVisible: false });
+    zoneLines.push(l);
+    l.setData([{ time: zStart, value: val }, { time: zEnd, value: val }]);
+  });
+  line(s.stopLoss, '#ff4757', 2);
+  line(s.entry, '#00D09C', 2);
+  line(s.target, '#59c2ff', 2);
 
+  mk(() => {
     livePriceLine = chart.addLineSeries({ color: '#f1c40f', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: true });
     zoneLines.push(livePriceLine);
     livePriceLine.setData([{ time: zStart, value: s.price || s.entry }, { time: zEnd, value: s.price || s.entry }]);
-  } catch(e) {}
+  });
 
   addLbl(s.entry,'#00D09C','ENTRY '+Number(s.entry).toFixed(1),'elbl');
   addLbl(s.stopLoss,'#ff4757','SL '+Number(s.stopLoss).toFixed(1),'slbl');
@@ -469,6 +572,7 @@ function addLbl(p,col,txt,cls) {
 function clearAllOverlays() {
   if (chart) zoneLines.forEach(l => { try { chart.removeSeries(l); } catch(e){} });
   zoneLines = []; labels.forEach(l => l.remove()); labels = []; livePriceLine = null;
+  clearZoneBoxes(); lastZoneKey = '';
 }
 
 function applyRisk() { engine.setAccount(parseInt(document.getElementById('riskCap').value)||100000, parseFloat(document.getElementById('riskPct').value)||1); }

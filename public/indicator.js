@@ -379,7 +379,8 @@ class DSEngine {
       date: dateKey, time: timeStr, tf, direction: setup.direction,
       pattern: setup.pattern, entry: setup.entry, stopLoss: setup.stopLoss,
       target: setup.target, status, price: setup.price,
-      pnl: setup.pnl ? setup.pnl.toFixed(1) : '0'
+      pnl: setup.pnl ? setup.pnl.toFixed(1) : '0',
+      reason: setup.abandonReason || ''
     });
     this._saveHistory();
     if (!this.completedByTF[tf]) this.completedByTF[tf] = [];
@@ -631,6 +632,21 @@ class DSEngine {
       else if (p >= s.stopLoss) s.status = 'STOP_LOSS_HIT';
       else if (p >= s.distal) s.status = 'INVALIDATED';
       else if (s.armed && p <= s.entry && (s.status === 'WAITING' || s.status === 'ARMED')) s.status = 'ENTRY_TRIGGERED';
+    }
+    // ENTRY REVISIT RULE: entry mil chuki, price door gayi aur phir DOOSRI baar entry par aayi
+    // aur SL/Target nahi mila → wo zone khatam (invalidate), agla zone pick hoga
+    if (s.status === 'ENTRY_TRIGGERED') {
+      if (!s.entryVisits) { s.entryVisits = 1; s._awayFromEntry = false; }
+      else {
+        const risk = Math.abs(s.entry - s.stopLoss) || 1;
+        const awayD = Math.max(risk * 0.3, (s.entryNear || 0) * 2);
+        if (isBuy ? p >= s.entry + awayD : p <= s.entry - awayD) s._awayFromEntry = true;
+        if (s._awayFromEntry && (isBuy ? p <= s.entry : p >= s.entry)) {
+          s.entryVisits = 2;
+          s.status = 'INVALIDATED';
+          s.abandonReason = 'Entry doosri baar (SL/Target nahi mila) — zone chhoda, agla zone active';
+        }
+      }
     }
     s.price = p; s.zoneDist = Math.abs(p - s.proximal);
     s.pnl = isBuy ? p - s.entry : s.entry - p;

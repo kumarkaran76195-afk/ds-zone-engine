@@ -369,7 +369,8 @@ function updAnalysis(a) {
     let hasComp = false;
     for (const tfk of tfs) { const comp = a.completedByTF[tfk]; if (comp && comp.length) { for (const t of comp.slice(-3).reverse()) {
       hasComp = true; const tcol = t.hitStatus === 'TARGET_HIT' ? '#00D09C' : '#ff4757';
-      chtml += '<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #1a1a2e;font-size:10px">';
+      const tip = (t.abandonReason || t.hitStatus || '').replace(/"/g, '&quot;');
+      chtml += '<div title="' + tip + '" style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #1a1a2e;font-size:10px">';
       chtml += '<span style="color:' + tcol + ';font-weight:700">' + (t.hitStatus === 'TARGET_HIT' ? 'T' : 'X') + '</span>';
       chtml += '<span style="width:22px;color:' + tcol + '">' + tfk + '</span>';
       chtml += '<span style="width:24px;color:' + tcol + '">' + t.direction + '</span>';

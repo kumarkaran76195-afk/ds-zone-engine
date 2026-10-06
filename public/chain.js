@@ -316,7 +316,7 @@
     });
   }
 
-  function exitPos(id) {
+  function exitPos(id, reason) {
     const i = paper.pos.findIndex(p => p.id === id);
     if (i < 0) return;
     const p = paper.pos[i];
@@ -329,7 +329,7 @@
       sym: p.sym, strike: p.strike, side: p.side, lots: p.lots, qty: p.qty,
       entry: p.entry, exit: p.ltp, chg: (p.chg || 0) + sellChg,
       pnl: (p.ltp - p.entry) * p.qty - ((p.chg || 0) + sellChg),
-      entryTs: p.entryTs, exitTs: Date.now()
+      entryTs: p.entryTs, exitTs: Date.now(), reason: reason || (p.auto ? 'AUTO' : '')
     });
     if (paper.trades.length > 100) paper.trades.length = 100;
     savePaper();
@@ -366,6 +366,7 @@
       h += '<div class="ch-tr">' +
         '<div class="ch-pos-l"><b>' + x.sym + ' ' + x.strike + ' ' + x.side + '</b>' +
         '<span>' + x.qty + ' qty · IN ₹' + fmt(x.entry) + ' → OUT ₹' + fmt(x.exit) + ' · ' + timeAgo(x.exitTs) + '</span>' +
+        (x.reason ? '<span class="ch-chg">' + x.reason + '</span>' : '') +
         (x.chg ? '<span class="ch-chg">Charges ₹' + fmt(x.chg) + ' (brokerage+STT+GST)</span>' : '') + '</div>' +
         '<div class="ch-pos-r ' + (win ? 'up' : 'dn') + '">' +
         '<b>' + (win ? '+' : '-') + '₹' + fmt(Math.abs(x.pnl)) + '</b>' +
@@ -416,6 +417,90 @@
     savePaper();
     renderWallet(); renderPositions(); renderTrades(); renderNet(); markPositions();
   }
+
+  // ── AUTO PAPER TRADING — 3m ke har zone: entry par auto ENTRY, SL/Target par auto EXIT, 1 lot ──
+  let autoSeen = {};
+  try { autoSeen = JSON.parse(localStorage.getItem('ds_auto_seen') || '{}') || {}; } catch (e) { autoSeen = {}; }
+  function saveAutoSeen() {
+    const ks = Object.keys(autoSeen);
+    if (ks.length > 300) {
+      ks.sort((a, b) => autoSeen[b] - autoSeen[a]);
+      const t = {}; ks.slice(0, 300).forEach(k => { t[k] = autoSeen[k]; }); autoSeen = t;
+    }
+    try { localStorage.setItem('ds_auto_seen', JSON.stringify(autoSeen)); } catch (e) {}
+  }
+  function autoKey(s) { return s.zoneTF + '|' + s.zoneTime + '|' + Math.round((s.entry || 0) * 10) / 10; }
+
+  async function fetchChain(symKey) {
+    try {
+      const r = await fetch('/api/chain/' + symKey);
+      const j = await r.json();
+      if (j && !j.error) return j;
+    } catch (e) {}
+    return null;
+  }
+
+  async function autoEnter(s) {
+    const key = autoKey(s);
+    if (autoSeen[key]) return;
+    autoSeen[key] = Date.now(); saveAutoSeen();          // ek zone par sirf ek entry
+    const fail = () => { delete autoSeen[key]; saveAutoSeen(); };
+    const symKey = (typeof sym !== 'undefined' && sym) ? sym : cSym;
+    const j = await fetchChain(symKey);
+    if (!j || !j.mktOpen || !j.rows || !j.rows.length) return fail();
+    const step = symKey === 'NIFTY' ? 50 : 100;
+    const strike = Math.round((s.entry || 0) / step) * step;
+    const row = j.rows.find(x => x.strike === strike);
+    if (!row) return fail();
+    const side = s.direction === 'BUY' ? 'CE' : 'PE';     // BUY zone → CE, SELL zone → PE
+    const px = side === 'CE' ? row.ce.ltp : row.pe.ltp;
+    if (!px) return fail();
+    const lots = 1;                                        // har entry 1 lot
+    const qty = lots * (j.lot || 1);
+    const cost = px * qty;
+    const chg = calcCharges(cost, 0).total;
+    if (cost + chg > paper.cash) return fail();
+    paper.cash -= (cost + chg);
+    paper.pos.push({
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      sym: symKey, expiry: j.expiry || '', strike, side, lots, qty,
+      entry: px, ltp: px, chg, entryTs: Date.now(), auto: true, setupKey: key
+    });
+    savePaper();
+    markPositions(); renderPositions(); renderTrades(); renderNet(); renderWallet();
+  }
+
+  async function autoExit(t) {
+    const key = autoKey(t);
+    const p = paper.pos.find(x => x.setupKey === key);
+    if (!p) return;
+    const j = await fetchChain(p.sym);
+    if (j && j.rows) {
+      const r = j.rows.find(x => x.strike === p.strike);
+      const px = p.side === 'CE' ? (r && r.ce.ltp) : (r && r.pe.ltp);
+      if (px) p.ltp = px;
+    }
+    const reason = t.hitStatus === 'TARGET_HIT' ? 'AUTO · TARGET'
+      : t.hitStatus === 'STOP_LOSS_HIT' ? 'AUTO · STOP LOSS'
+      : 'AUTO · ZONE OUT';
+    exitPos(p.id, reason);
+  }
+
+  // app.js har analysis update par ye call karta hai
+  window.dsAutoTrade = function (a) {
+    try {
+      if (!a) return;
+      const s = a.activeSetup;
+      if (s && s.zoneTF === '3m' && s.status === 'ENTRY_TRIGGERED') autoEnter(s);
+      const comp = a.completedByTF && a.completedByTF['3m'];
+      if (comp) {
+        for (const t of comp.slice(-8)) {
+          if (!t || t.zoneTF !== '3m' || !t.zoneTime) continue;
+          if (paper.pos.some(x => x.setupKey === autoKey(t))) autoExit(t);
+        }
+      }
+    } catch (e) {}
+  };
 
   // ── open / close ──
   function openChain() {

@@ -452,6 +452,7 @@ function updAnalysis(a) {
     if (setupChanged) clearAllOverlays();
   }
   if (chartInitDone) syncFreshZones();
+  if (window.dsAutoTrade) { try { dsAutoTrade(a); } catch (e) {} }
 }
 
 function freshZoneKey(zs) {

@@ -590,6 +590,26 @@ function broadcast(data) {
   clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg); });
 }
 
+// ── AUTO BOT: server pe 24/7 auto paper trading (3m zone, 1 lot) — laptop band ho tab bhi chalta hai ──
+const createAutoBot = require('./auto-bot');
+const autoBot = createAutoBot({
+  storeDir: STORE_DIR,
+  symbol: 'NIFTY',
+  fetchCandles, getMgr, startPolling, isMarketOpen,
+  getPrices: () => prices,
+  chainQuote: async (symKey, strike, side) => {
+    const st = await chainStructure(symKey, '');
+    const row = st.rows.find(r => r.strike === strike);
+    if (!row) return null;
+    const ids = [row.ceId, row.peId].filter(Boolean);
+    const pr = await chainBatchPrices(ids);
+    const p = side === 'CE' ? pr[row.ceId] : pr[row.peId];
+    return { ltp: (p && p.ltp) || 0, lot: st.lot, expiry: st.expiry };
+  }
+});
+autoBot.start();
+app.get('/api/autopaper', (req, res) => res.json(autoBot.status()));
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('=========================================');

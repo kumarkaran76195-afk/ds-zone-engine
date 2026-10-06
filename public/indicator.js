@@ -699,3 +699,8 @@ class DSEngine {
       allFreshZones: st.count, freshCount: st.fresh, freshZones: st.list };
   }
 }
+
+// Node (server) ke liye export — auto-bot server pe engine chalata hai (laptop band ho tab bhi)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { CandleEngine, ATREngine, TrendEngine, ZoneEngine, TradeScorer, CurveEngine, RiskManager, DSEngine };
+}

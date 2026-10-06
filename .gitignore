@@ -5,6 +5,7 @@ trials.json
 paid.json
 sessions.json
 devices.json
+auto-bot.json
 
 # android build artifacts (local only, not needed on server)
 android-app/build/

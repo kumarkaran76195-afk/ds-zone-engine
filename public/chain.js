@@ -77,6 +77,7 @@
       renderTrades();
       renderNet();
       renderWallet();
+      loadAutoBot();
       scrollToAtm(j);
     } catch (e) { $('chainErr').textContent = 'Network error'; }
     cLoading = false;
@@ -501,6 +502,44 @@
       }
     } catch (e) {}
   };
+
+  // ── AUTO BOT (server 24/7) status — chain screen par ──
+  async function loadAutoBot() {
+    try {
+      const r = await fetch('/api/autopaper');
+      const j = await r.json();
+      renderAutoBot(j);
+    } catch (e) {}
+  }
+
+  function renderAutoBot(j) {
+    const el = $('chainAuto');
+    if (!el || !j || !j.sym) return;
+    const trades = j.trades || [];
+    let tot = 0, wins = 0, losses = 0;
+    for (const t of trades) { tot += t.pnl; if (t.pnl >= 0) wins++; else losses++; }
+    const open = (j.pos || []).length;
+    let h = '<div class="ab-hd"><b>AUTO BOT · SERVER 24/7</b>' +
+      '<span class="ab-mk ' + (j.mktOpen ? 'on' : 'off') + '">' + (j.mktOpen ? 'LIVE' : 'CLOSED') + '</span>' +
+      '<span>' + j.sym + ' · ' + j.tf + ' · 1 LOT</span>' +
+      (j.lastError ? '<span class="ab-err">' + j.lastError + '</span>' : '') + '</div>';
+    h += '<div class="ab-row">DEMO <b>₹' + fmt(j.cash) + '</b> · OPEN <b>' + open + '</b> · TODAY <b>' + (j.entriesToday || 0) + '</b>' +
+      ' · NET <b class="' + (j.netPnl >= 0 ? 'up' : 'dn') + '">' + (j.netPnl >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(j.netPnl || 0)) + '</b>' +
+      ' · ' + (j.wins || 0) + 'W/' + (j.losses || 0) + 'L</div>';
+    const s = j.active;
+    if (s && s.entry != null) {
+      h += '<div class="ab-row ab-act">' + (s.direction || '') + ' ' + (s.zoneTF || '') + 'm · E ₹' + fmt(s.entry) +
+        ' · SL ₹' + fmt(s.stopLoss) + ' · T ₹' + fmt(s.target) + ' · ' + (s.status || '') + '</div>';
+    }
+    for (const t of trades.slice(0, 5)) {
+      h += '<div class="ab-tr ' + (t.pnl >= 0 ? 'up' : 'dn') + '">' +
+        '<b>' + (t.pnl >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(t.pnl)) + '</b>' +
+        '<span>' + t.strike + ' ' + t.side + ' · ' + t.qty + ' qty · ₹' + fmt(t.entry) + ' → ₹' + fmt(t.exit) + '</span>' +
+        '<em>' + (t.reason || 'AUTO') + '</em></div>';
+    }
+    if (!trades.length && !open) h += '<div class="ab-row ab-idle">Market hours me 3m zone ki ENTRY bot lega — SL/Target par auto EXIT</div>';
+    el.innerHTML = h;
+  }
 
   // ── open / close ──
   function openChain() {

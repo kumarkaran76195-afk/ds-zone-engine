@@ -6,8 +6,6 @@ services:
     buildCommand: npm install
     startCommand: node server.js
     envVars:
-      - key: PORT
-        value: 3000
       - key: API_KEY
         sync: false
       - key: API_BASE_URL

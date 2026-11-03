@@ -53,66 +53,9 @@ function getDeviceId() {
 }
 
 async function initAuth() {
-  if (isLocalHost()) { hideLogin(); startApp(); return; }
-  const token = localStorage.getItem('ds_token');
-  if (token) {
-    try {
-      const r = await fetch('/api/otp/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-      const d = await r.json();
-      if (d.ok) {
-        dsTrialInfo = d.trial || null;
-        if (d.trial && d.trial.expired) { showPaywall(); return; }
-        hideLogin(); startApp(); return;
-      }
-      localStorage.removeItem('ds_token');
-    } catch (e) {}
-  }
-  showLogin();
-  document.getElementById('btnSendOtp').onclick = async () => {
-    const email = document.getElementById('loginEmail').value.trim();
-    loginErr('');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { loginErr('Valid email daalo'); return; }
-    if (!/@gmail\.com$/i.test(email)) { loginErr('Sirf Gmail ID se login ho sakta hai'); return; }
-    const btn = document.getElementById('btnSendOtp');
-    btn.disabled = true; btn.textContent = 'SENDING...';
-    try {
-      const r = await fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, deviceId: getDeviceId() }) });
-      const d = await r.json();
-      if (d.ok) {
-        document.getElementById('loginStep1').style.display = 'none';
-        document.getElementById('loginStep2').style.display = 'flex';
-        document.getElementById('otpSentMsg').textContent = 'OTP sent to ' + email;
-        document.getElementById('loginOtp').focus();
-      } else loginErr(d.error || 'Failed to send OTP');
-    } catch (e) { loginErr('Network error'); }
-    btn.disabled = false; btn.textContent = 'SEND OTP';
-  };
-  document.getElementById('btnVerifyOtp').onclick = async () => {
-    const email = document.getElementById('loginEmail').value.trim();
-    const otp = document.getElementById('loginOtp').value.trim();
-    loginErr('');
-    if (otp.length !== 6) { loginErr('6-digit OTP daalo'); return; }
-    const btn = document.getElementById('btnVerifyOtp');
-    btn.disabled = true; btn.textContent = 'VERIFYING...';
-    try {
-      const r = await fetch('/api/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp, deviceId: getDeviceId() }) });
-      const d = await r.json();
-      if (d.ok) {
-        localStorage.setItem('ds_token', d.token);
-        dsTrialInfo = d.trial || null;
-        if (d.trial && d.trial.expired) { showPaywall(); return; }
-        hideLogin();
-        startApp();
-      } else loginErr(d.error || 'Wrong OTP');
-    } catch (e) { loginErr('Network error'); }
-    btn.disabled = false; btn.textContent = 'VERIFY & OPEN';
-  };
-  document.getElementById('btnResendOtp').onclick = () => {
-    document.getElementById('loginStep2').style.display = 'none';
-    document.getElementById('loginStep1').style.display = 'flex';
-    loginErr('');
-    document.getElementById('btnSendOtp').click();
-  };
+  // Gmail/OTP login HATA DIYA — seedha app khulta hai (koi login nahi)
+  hideLogin();
+  startApp();
 }
 
 function startApp() {
@@ -878,20 +821,7 @@ initAuth();
 const bbX = document.getElementById('buyBannerX');
 if (bbX) bbX.onclick = () => { buyBannerClosed = true; updateBuyBanner(); };
 
-// Trial auto-close: har 60 sec check — 7 din hue to market apne band
-setInterval(async () => {
-  if (isLocalHost() || !authed || paywallOn) return;
-  const token = localStorage.getItem('ds_token');
-  if (!token) return;
-  try {
-    const r = await fetch('/api/otp/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-    const d = await r.json();
-    if (!d.ok) { localStorage.removeItem('ds_token'); showLogin(); return; }
-    dsTrialInfo = d.trial || null;
-    if (d.trial && d.trial.expired) showPaywall();
-    else updateBuyBanner();
-  } catch (e) {}
-}, 60000);
+// Trial/paywall auto-close interval HATA DIYA (login hi nahi ab)
 
 // ── AI AGENT strip (main window panel) — /api/agent se live:
 //    W/L + win%, Strategy Version, CAUTION, pending SUGGEST, latest ROOT CAUSE,

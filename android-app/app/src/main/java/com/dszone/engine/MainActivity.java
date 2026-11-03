@@ -107,7 +107,7 @@ public class MainActivity extends Activity {
             }
         });
         webView.setBackgroundColor(0xFF0A0A0F);
-        webView.loadUrl("https://ds-zone-engine-production.up.railway.app/");
+        webView.loadUrl("https://ds-zone-engine.onrender.com/");
 
         if (adView != null) {
             try {

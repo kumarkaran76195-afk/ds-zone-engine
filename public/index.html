@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DS Zone Engine | Live Trading</title>
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="stylesheet" href="styles.css?v=28">
 <script src="lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -30,10 +30,10 @@
   <div class="login-box">
     <div class="login-logo">DS ZONE ENGINE</div>
     <div class="paywall-title">7 DIN FREE TRIAL KHATAM</div>
-    <div class="login-sub">Indicator + Channel kharido ₹499 me — WhatsApp pe baat karo</div>
+    <div class="login-sub">Indicator + Channel kharido ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹499 me ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â WhatsApp pe baat karo</div>
     <a class="paywall-wa" href="https://wa.me/916239883897?text=Hi%2C%20Indicator%20aur%20Channel%20kharidna%20hai%20(499)" >WHATSAPP PE BAAT KARO</a>
-    <div class="paywall-num">WhatsApp: 6239883897 · ₹499</div>
-    <div class="login-foot">Message karo — access turant milega</div>
+    <div class="paywall-num">WhatsApp: 6239883897 Ãƒâ€šÃ‚Â· ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹499</div>
+    <div class="login-foot">Message karo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â access turant milega</div>
   </div>
 </div>
 <div id="app">
@@ -44,23 +44,10 @@
       <div class="mkt-status" id="mktStatus" style="display:none;background:#ff4757;color:#fff;font-size:10px;padding:2px 8px;border-radius:4px;margin-left:8px;font-weight:600">MARKET CLOSED</div>
     </div>
     <div class="hdr-c">
-      <select id="symSel">
-        <option value="NIFTY">NIFTY 50</option>
-        <option value="BANKNIFTY">BANKNIFTY</option>
-        <option value="SENSEX">SENSEX</option>
-        <option value="FINNIFTY">FINNIFTY</option>
-        <option value="RELIANCE">RELIANCE</option>
-        <option value="TCS">TCS</option>
-        <option value="INFY">INFY</option>
-        <option value="HDFCBANK">HDFC BANK</option>
-        <option value="SBIN">SBI</option>
-        <option value="ICICIBANK">ICICI BANK</option>
-        <option value="ADANIENT">ADANI ENT</option>
-        <option value="BAJFINANCE">BAJ FIN</option>
-        <option value="ITC">ITC</option>
-        <option value="WIPRO">WIPRO</option>
-        <option value="TATAMOTORS">TATA MOTORS</option>
-      </select>
+      <div class="sym-search" id="symSearch">
+        <input type="text" id="symInput" placeholder="Search stock (SBI, RELIANCE...)" autocomplete="off" spellcheck="false">
+        <div class="sym-drop" id="symDrop" style="display:none"></div>
+      </div>
       <div class="tf-tabs" id="tfTabs"></div>
       <div class="ltp"><span class="ltp-sym" id="ltpSym">NIFTY</span><span class="ltp-val" id="ltpVal">--</span></div>
     </div>
@@ -76,7 +63,7 @@
   </header>
   <div class="main">
     <div class="chart-area">
-      <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY — NO BUY/SELL RECOMMENDATION — LEARNING KARO TRADE MAT KARO</div>
+      <div id="disclaimer" style="position:absolute;top:0;left:0;right:0;z-index:10;background:rgba(255,71,87,0.15);border-bottom:1px solid rgba(255,71,87,0.3);padding:5px 10px;font-size:10px;color:#ff4757;font-weight:600;text-align:center;letter-spacing:0.5px">FOR EDUCATION PURPOSE ONLY ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â NO BUY/SELL RECOMMENDATION ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â LEARNING KARO TRADE MAT KARO</div>
       <div id="chart" style="position:absolute;top:28px;left:0;right:0;bottom:0"></div>
       <div class="labels" id="labels" style="top:28px"></div>
     </div>
@@ -118,6 +105,10 @@
           </div>
           <div class="s-bar"><span class="s-lbl">STATUS</span><span class="s-val" id="sStatus">--</span></div>
           <div class="tf-sum" id="tfSum" style="font-size:11px;color:#888;margin-top:6px;letter-spacing:0.5px"></div>
+          <div id="aiAgentBox" title="AI Agent se baat karo â€” chat khulega" style="margin-top:8px;padding:7px 8px;background:#111a2e;border:1px solid #2b3a5e;border-radius:8px;font-size:11px;color:#9ab;cursor:pointer;letter-spacing:.3px">
+            <div style="font-size:10px;color:#666;letter-spacing:1px;margin-bottom:4px">AI AGENT <span id="aiVer" style="color:#59c2ff"></span></div>
+            <div id="aiAgentLine" style="color:#889">Agent connect ho raha hai...</div>
+          </div>
           <div class="risk-box">
             <div class="rb-title">RISK MANAGEMENT</div>
             <div class="rb-grid">
@@ -130,6 +121,7 @@
         </div>
       </div>
       <div class="p-foot">
+        <div class="best-buy" id="bestBuyBox" style="display:none"></div>
         <div class="tf-section">
           <div class="tf-title">MULTI-TIMEFRAME TREND</div>
           <div class="tf-grid" id="tfGrid"></div>
@@ -140,6 +132,7 @@
           <div class="si"><span class="si-l">CURVE</span><span class="si-v" id="sumCurve">--</span></div>
         </div>
         <div class="tf-zones" id="tfZones" style="margin-top:8px"></div>
+        <div class="htf-zones" id="htfZones" style="margin-top:8px"></div>
         <div class="completed-section" id="completedSection" style="margin-top:8px;max-height:180px;overflow-y:auto"></div>
         <div class="history-section" id="historySection" style="margin-top:8px;max-height:200px;overflow-y:auto"></div>
       </div>
@@ -147,9 +140,9 @@
   </div>
 </div>
 <div id="buyBanner" style="display:none">
-  <div class="bb-txt">Indicator + Channel sirf <b>₹499</b> — WhatsApp: <b>6239883897</b></div>
+  <div class="bb-txt">Indicator + Channel sirf <b>ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹499</b> ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â WhatsApp: <b>6239883897</b></div>
   <a href="https://wa.me/916239883897?text=Hi%2C%20Indicator%20aur%20Channel%20kharidna%20hai%20(499)">WHATSAPP</a>
-  <button id="buyBannerX" title="Band karo">✕</button>
+  <button id="buyBannerX" title="Band karo">ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢</button>
 </div>
 <div id="chainScreen" style="display:none">
   <div class="ch-top">
@@ -160,16 +153,16 @@
     <select id="chainExp"></select>
     <div class="ch-head-r">
       <span class="ch-mkt" id="chainMkt">--</span>
-      <button id="chainClose" title="Band karo">✕</button>
+      <button id="chainClose" title="Band karo">ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢</button>
     </div>
   </div>
   <div class="ch-info">
     <span id="chainSpot">--</span>
     <span id="chainLot">LOT --</span>
-    <span class="ch-cash">DEMO: <b id="chainCash">₹20,00,000</b></span>
+    <span class="ch-cash">DEMO: <b id="chainCash">ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹20,00,000</b></span>
     <span id="chainCnt">0 POS</span>
-    <span class="ch-pnl">P&L <b id="chainPnl" class="ch-pnl-v">₹0</b></span>
-    <span class="ch-book">TOTAL P&L <b id="chainNet" class="ch-pnl-v">₹0</b></span>
+    <span class="ch-pnl">P&L <b id="chainPnl" class="ch-pnl-v">ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹0</b></span>
+    <span class="ch-book">TOTAL P&L <b id="chainNet" class="ch-pnl-v">ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¹0</b></span>
     <button id="chainReset" title="Wallet reset">RESET</button>
   </div>
   <div class="ch-err" id="chainErr"></div>
@@ -191,6 +184,10 @@
         <div class="os-i"><span>CHARGES</span><b id="ordChg">--</b></div>
         <div class="os-i"><span>DEMO CASH</span><b id="ordCash">--</b></div>
         <div class="os-i"><span>TOTAL DEBIT</span><b id="ordTotal">--</b></div>
+<div class="os-i"><span>SUGGEST LOTS</span><b id="ordSug">--</b></div>
+<div class="os-i os-loss"><span>IF SL HIT (approx)</span><b id="ordLoss">--</b></div>
+<div class="os-i os-win"><span>IF TARGET (approx)</span><b id="ordWin">--</b></div>
+<div class="os-i"><span>RISK : REWARD</span><b id="ordRR">--</b></div>
       </div>
       <div class="os-lots"><label>LOTS</label><input type="number" id="ordLots" value="1" min="1" max="100"></div>
       <div class="os-note" id="ordNote"></div>
@@ -199,8 +196,10 @@
     </div>
   </div>
 </div>
-<script src="indicator.js?v=19"></script>
-<script src="app.js?v=21"></script>
-<script src="chain.js?v=8"></script>
+<script src="symbols.js?v=2"></script>
+<script src="indicator.js?v=24"></script>
+  <script src="app.js?v=37"></script>
+  <script src="chain.js?v=15"></script>
+  <script src="agent-chat.js?v=7"></script>
 </body>
 </html>

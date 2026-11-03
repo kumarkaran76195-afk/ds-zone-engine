@@ -6,6 +6,7 @@ paid.json
 sessions.json
 devices.json
 auto-bot.json
+ai-agent.json
 
 # android build artifacts (local only, not needed on server)
 android-app/build/
@@ -18,3 +19,11 @@ android-admin/.gradle/
 _test.js
 _chain.js
 _oc.js
+zone-knowledge.txt
+candle-knowledge.txt
+
+server_err.log
+server_out.log
+news-journal.json
+backtest/backtest-run.log
+backtest/data/

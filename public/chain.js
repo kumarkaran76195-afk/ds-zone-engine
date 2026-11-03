@@ -9,10 +9,10 @@
     try {
       const j = JSON.parse(localStorage.getItem('ds_paper'));
       if (j && typeof j.cash === 'number') {
-        let start = (typeof j.start === 'number' && j.start > 0) ? j.start : 0;
-        if (!start) {
-          // v1 (1 lakh) -> v2 (20 lakh): P&L preserve rakho
-          j.cash = Math.max(0, START_CASH + (j.cash - 100000));
+        let start = (typeof j.start === 'number' && j.start > 0) ? j.start : 100000;
+        if (start < START_CASH) {
+          // purana wallet (1L/12L) → 20L: P&L preserve, sirf capital 20 lakh
+          j.cash = Math.max(0, START_CASH + (j.cash - start));
           start = START_CASH;
         }
         return { cash: j.cash, pos: j.pos || [], trades: j.trades || [], start: start };
@@ -45,12 +45,13 @@
   function fmt0(n) { return Math.round(n).toLocaleString('en-IN'); }
   function $(id) { return document.getElementById(id); }
 
-  // visibility: sirf APK (non-localhost) + login ke baad
+  // visibility: localhost par bhi (dev/demo) + APK me (non-localhost) login ke baad
   function syncBtn() {
     const b = $('chainBtn');
     if (!b) return;
-    const show = (typeof isLocalHost === 'function') && !isLocalHost() && typeof authed !== 'undefined' && authed && !(typeof paywallOn !== 'undefined' && paywallOn);
-    b.style.display = show ? '' : 'none';
+    const local = (typeof isLocalHost === 'function') && isLocalHost();
+    const apkAuthed = !local && typeof authed !== 'undefined' && authed && !(typeof paywallOn !== 'undefined' && paywallOn);
+    b.style.display = (local || apkAuthed) ? '' : 'none';
   }
   setInterval(syncBtn, 800);
 
@@ -115,13 +116,15 @@
     try { a = (typeof lastA !== 'undefined') ? lastA : null; } catch (e) {}
     const sameSym = (typeof sym !== 'undefined') && sym === j.sym;
     let setupStrike = null;
+    let zone = null;                                   // active zone: entry/SL/TARGET (loss/profit plan ke liye)
     if (a && sameSym) {
       const s = a.activeSetup;
       if (s && (s.status === 'WAITING' || s.status === 'ARMED' || s.status === 'ENTRY_TRIGGERED')) {
         if (s.direction === 'BUY') ceV += 2; else peV += 2;
-        why.push('SETUP ' + s.direction + ' ' + s.zoneTF + 'm');
+        why.push('SETUP ' + s.direction + ' ' + (/m$/.test(String(s.zoneTF)) ? s.zoneTF : s.zoneTF + 'm'));
         const step = j.sym === 'NIFTY' ? 50 : 100;
         setupStrike = Math.round((s.entry || 0) / step) * step;
+        if (s.entry && s.stopLoss && s.target) zone = { entry: s.entry, sl: s.stopLoss, tgt: s.target, dir: s.direction || 'BUY' };
       }
       let tv = 0;
       ['t1', 't3', 't5'].forEach(k => {
@@ -147,7 +150,33 @@
     let strike = atm;
     if (setupStrike && j.rows.some(r => r.strike === setupStrike)) strike = setupStrike;
     const conf = Math.abs(ceV - peV) >= 3 ? 'STRONG' : Math.abs(ceV - peV) === 2 ? 'GOOD' : 'WEAK';
-    return { side: side, strike: strike, ceV: ceV, peV: peV, why: why, conf: conf };
+    const rws = j.rows.find(x => x.strike === strike);
+    const buyPx = rws ? (side === 'CE' ? rws.ce.ltp : rws.pe.ltp) : 0;
+    return { side: side, strike: strike, ceV: ceV, peV: peV, why: why, conf: conf, zone: zone, buyPx: buyPx || 0 };
+  }
+
+  // ── LOTS + LOSS + PROFIT plan — kitne lot, SL par kitna katga, target par kitna milega ──
+  // zone points → ₹ (1:1 spot move approx) — premium actual delta se kam/badh sakta hai (label: approx)
+  function lotPlan(side, px) {
+    const lot = cData && cData.lot ? cData.lot : 65;
+    const cost = (px || 0) * lot;
+    const chg = calcCharges(cost, 0).total;
+    const z = (cSig && cSig.zone && cSig.side === side && px) ? cSig.zone : null;
+    let riskPts = 0, rewardPts = 0;
+    if (z) {
+      const buy = z.dir === 'BUY';
+      riskPts = Math.max(0, Math.round(buy ? (z.entry - z.sl) : (z.sl - z.entry)));
+      rewardPts = Math.max(0, Math.round(buy ? (z.tgt - z.entry) : (z.entry - z.tgt)));
+    }
+    const perLotRisk = riskPts * lot;                 // 1 lot ka approx loss (SL hit par)
+    const perLotReward = rewardPts * lot;             // 1 lot ka approx profit (target par)
+    const budget = Math.round((paper.start || 2000000) * 0.01);   // 1% risk budget (20L → ₹20,000)
+    let sug = 1;
+    if (perLotRisk > 0) sug = Math.max(1, Math.floor(budget / perLotRisk));
+    const unit = cost + chg;
+    const afford = unit > 0 ? Math.floor(paper.cash / unit) : 1;
+    sug = Math.max(1, Math.min(sug, afford, 20));
+    return { lot: lot, cost: cost, chg: chg, sug: sug, budget: budget, hasZone: !!z, riskPts: riskPts, rewardPts: rewardPts, perLotRisk: perLotRisk, perLotReward: perLotReward };
   }
 
   function renderSigBanner() {
@@ -161,9 +190,18 @@
       return;
     }
     el.className = 'ch-sig ' + (s.side === 'CE' ? 'ce' : 'pe');
+    const plan = lotPlan(s.side, s.buyPx || 0);
+    const planLine = s.buyPx
+      ? '<span class="ch-plan">LOTS: ' + plan.sug + ' · 1 lot cost ₹' + fmt(plan.cost) +
+        (plan.hasZone
+          ? ' · SL par LOSS −₹' + fmt(plan.perLotRisk) + ' (' + plan.riskPts + 'pt) · TARGET par PROFIT +₹' + fmt(plan.perLotReward) + ' (' + plan.rewardPts + 'pt) · RR 1:' + (plan.riskPts ? (plan.rewardPts / plan.riskPts).toFixed(1) : '--')
+          : ' · SL/TARGET zone abhi nahi — max loss = premium ₹' + fmt(plan.cost)) +
+        ' (approx) · 1 lot se shuru</span>'
+      : '';
     el.innerHTML = '<b>' + (s.side === 'CE' ? '▲ BUY CE' : '▼ BUY PE') + ' ' + s.strike + '</b>' +
       '<span>' + s.why.join(' · ') + '</span>' +
-      '<em>' + s.conf + ' · CE ' + s.ceV + ':' + s.peV + ' PE</em>';
+      '<em>' + s.conf + ' · CE ' + s.ceV + ':' + s.peV + ' PE</em>' +
+      planLine;
   }
 
   function renderRows(j) {
@@ -173,17 +211,29 @@
     for (const r of j.rows) {
       const atm = j.spot && Math.abs(r.strike - j.spot) <= (j.sym === 'NIFTY' ? 100 : 250);
       const sig = sigK === r.strike;
+      const buySide = sig ? cSig.side : null;              // bot jis side (CE/PE) kharidega
       h += '<div class="ch-row' + (atm ? ' atm' : '') + (sig ? ' sig' : '') + '" data-k="' + r.strike + '">' +
         '<span class="ch-oi">' + (r.ce.oi ? oiFmt(r.ce.oi) : '--') + '</span>' +
-        '<span class="ch-px ce">' + (r.ce.ltp ? fmt(r.ce.ltp) : '--') + '</span>' +
+        '<span class="ch-px ce' + (buySide === 'CE' ? ' buy' : '') + '">' + (r.ce.ltp ? fmt(r.ce.ltp) : '--') + '</span>' +
         '<span class="ch-k">' + r.strike + (sig ? '<i class="ch-sigtag">' + (cSig.side === 'CE' ? '▲' : '▼') + '</i>' : '') + '</span>' +
-        '<span class="ch-px pe">' + (r.pe.ltp ? fmt(r.pe.ltp) : '--') + '</span>' +
+        '<span class="ch-px pe' + (buySide === 'PE' ? ' buy' : '') + '">' + (r.pe.ltp ? fmt(r.pe.ltp) : '--') + '</span>' +
         '<span class="ch-oi">' + (r.pe.oi ? oiFmt(r.pe.oi) : '--') + '</span>' +
         '</div>' +
         '<div class="ch-btns" data-k="' + r.strike + '">' +
         '<button class="ch-b buy-ce' + (sig && cSig.side === 'CE' ? ' rec' : '') + '" ' + (r.ce.ltp ? '' : 'disabled') + '>' + (sig && cSig.side === 'CE' ? '★ ' : '') + 'BUY CE ' + (r.ce.ltp ? '₹' + fmt(r.ce.ltp) : '') + '</button>' +
         '<button class="ch-b buy-pe' + (sig && cSig.side === 'PE' ? ' rec' : '') + '" ' + (r.pe.ltp ? '' : 'disabled') + '>' + (sig && cSig.side === 'PE' ? '★ ' : '') + 'BUY PE ' + (r.pe.ltp ? '₹' + fmt(r.pe.ltp) : '') + '</button>' +
         '</div>';
+      // bot ke buy price ke NEECHE line — jahan 1-lot auto ENTRY hogi (3m+5m zone par)
+      if (sig) {
+        const bpx = cSig.side === 'CE' ? r.ce.ltp : r.pe.ltp;
+        const pl = lotPlan(cSig.side, bpx || 0);
+        h += '<div class="ch-botline ' + (cSig.side === 'CE' ? 'ce' : 'pe') + '">━ AUTO ' + cSig.side +
+          ' BUY LINE @ ₹' + (bpx ? fmt(bpx) : '--') + ' · ' + pl.sug + ' lot' +
+          (pl.hasZone
+            ? ' · SL LOSS −₹' + fmt(pl.perLotRisk) + ' · TARGET PROFIT +₹' + fmt(pl.perLotReward) + ' (approx)'
+            : ' · cost ₹' + fmt(pl.cost)) +
+          ' · bot isi price par kharidga ━</div>';
+      }
     }
     box.innerHTML = h;
     box.querySelectorAll('.ch-b').forEach(btn => {
@@ -230,7 +280,9 @@
     ord = { strike, side, px, lots: 1 };
     $('ordTitle').textContent = cSym + ' ' + strike + ' ' + side;
     $('ordPx').textContent = '₹' + fmt(px);
-    $('ordLots').value = 1;
+    const sugL = lotPlan(side, px).sug;              // suggest lots (1% risk rule) — user dekh lega
+    $('ordLots').value = sugL;
+    ord.lots = sugL;
     updOrder();
     $('orderSheet').style.display = 'flex';
     $('chainBack').style.display = 'block';
@@ -247,6 +299,16 @@
     if ($('ordChg')) $('ordChg').textContent = '₹' + fmt(chg);
     if ($('ordTotal')) $('ordTotal').textContent = '₹' + fmt(cost + chg);
     $('ordCash').textContent = '₹' + fmt(paper.cash);
+    // ── kitne lot (suggest) + kitna loss (SL) + kitna profit (target) + RR ──
+    const plan = lotPlan(ord.side, ord.px);
+    if ($('ordSug')) $('ordSug').textContent = plan.sug + ' lot' + (plan.hasZone ? ' (1% risk ₹' + fmt(plan.budget) + ')' : '');
+    if ($('ordLoss')) $('ordLoss').textContent = plan.hasZone
+      ? '−₹' + fmt(plan.perLotRisk * lots) + ' · ' + plan.riskPts + 'pt SL'
+      : '≈ ₹' + fmt(cost) + ' (premium)';
+    if ($('ordWin')) $('ordWin').textContent = plan.hasZone
+      ? '+₹' + fmt(plan.perLotReward * lots) + ' · ' + plan.rewardPts + 'pt TGT'
+      : 'zone nahi — target nahi';
+    if ($('ordRR')) $('ordRR').textContent = plan.hasZone && plan.riskPts ? '1:' + (plan.rewardPts / plan.riskPts).toFixed(1) : '--';
     const ok = (cost + chg) <= paper.cash;
     $('ordOk').disabled = !ok;
     $('ordOk').textContent = ok ? 'CONFIRM BUY' : 'INSUFFICIENT CASH';
@@ -269,6 +331,7 @@
       lots: ord.lots, qty, entry: ord.px, ltp: ord.px, chg: chg, entryTs: Date.now()
     });
     savePaper();
+    reportAuto('ENTRY', { tf: 'manual', dir: '', sym: cSym, strike: ord.strike, side: ord.side, entry: ord.px, qty: qty, lots: ord.lots });
     closeOrder();
     markPositions();
     renderPositions();
@@ -334,6 +397,12 @@
     });
     if (paper.trades.length > 100) paper.trades.length = 100;
     savePaper();
+    // har EXIT (auto + manual) → AI agent ko bridge (chain detail ke liye)
+    reportAuto('EXIT', {
+      tf: (p.setupKey || '').split('|')[0] || 'manual', dir: '', sym: p.sym, strike: p.strike, side: p.side,
+      entry: p.entry, exit: p.ltp, pnl: (p.ltp - p.entry) * p.qty - ((p.chg || 0) + sellChg),
+      reason: reason || (p.auto ? 'AUTO' : 'MANUAL')
+    });
     renderPositions();
     renderTrades();
     renderNet();
@@ -388,6 +457,23 @@
     box.innerHTML = h;
   }
 
+  // wallet snapshot → AI agent (chain detail: cash/open/net P&L) — 60s throttle
+  let lastSyncAt = 0;
+  function syncWallet() {
+    const now = Date.now();
+    if (now - lastSyncAt < 60000) return;
+    lastSyncAt = now;
+    const t = paper.trades || [];
+    let closedNet = 0;
+    for (const x of t) closedNet += x.pnl;
+    let openPnl = 0;
+    for (const p of paper.pos) openPnl += posPnl(p);
+    reportAuto('SYNC', {
+      cash: Math.round(paper.cash), closedNet: Math.round((closedNet + openPnl) * 100) / 100,
+      netPnl: Math.round((closedNet + openPnl) * 100) / 100, open: paper.pos.length, tradesN: t.length
+    });
+  }
+
   function renderNet() {
     const el = $('chainNet');
     if (!el) return;
@@ -396,6 +482,7 @@
     for (const x of t) { tot += x.pnl; if (x.pnl >= 0) wins++; else losses++; }
     el.textContent = t.length ? (tot >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(tot)) + ' · ' + wins + 'W/' + losses + 'L' : '₹0';
     el.className = 'ch-pnl-v ' + (tot >= 0 ? 'up' : 'dn');
+    syncWallet();
   }
 
   function markPositions() {
@@ -431,6 +518,16 @@
     try { localStorage.setItem('ds_auto_seen', JSON.stringify(autoSeen)); } catch (e) {}
   }
   function autoKey(s) { return s.zoneTF + '|' + s.zoneTime + '|' + Math.round((s.entry || 0) * 10) / 10; }
+
+  // auto ENTRY/EXIT events → server AI agent ko (status + chat me 3m autotrade dikhe)
+  function reportAuto(kind, data) {
+    try {
+      fetch('/api/agent/autotrade', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ src: 'chain', kind: kind }, data))
+      }).catch(function () {});
+    } catch (e) {}
+  }
 
   async function fetchChain(symKey) {
     try {
@@ -468,6 +565,7 @@
       entry: px, ltp: px, chg, entryTs: Date.now(), auto: true, setupKey: key
     });
     savePaper();
+    reportAuto('ENTRY', { tf: s.zoneTF || '3m', dir: s.direction || '', sym: symKey, strike, side, entry: px, qty });
     markPositions(); renderPositions(); renderTrades(); renderNet(); renderWallet();
   }
 
@@ -483,6 +581,7 @@
     }
     const reason = t.hitStatus === 'TARGET_HIT' ? 'AUTO · TARGET'
       : t.hitStatus === 'STOP_LOSS_HIT' ? 'AUTO · STOP LOSS'
+      : t.hitStatus === 'SQUARE_OFF' ? 'AUTO · 15:15 SQUARE OFF'
       : 'AUTO · ZONE OUT';
     exitPos(p.id, reason);
   }
@@ -491,13 +590,16 @@
   window.dsAutoTrade = function (a) {
     try {
       if (!a) return;
-      const s = a.activeSetup;
-      if (s && s.zoneTF === '3m' && s.status === 'ENTRY_TRIGGERED') autoEnter(s);
-      const comp = a.completedByTF && a.completedByTF['3m'];
-      if (comp) {
-        for (const t of comp.slice(-8)) {
-          if (!t || t.zoneTF !== '3m' || !t.zoneTime) continue;
-          if (paper.pos.some(x => x.setupKey === autoKey(t))) autoExit(t);
+      const atf = a.allTF || {};
+      for (const tf of ['3m', '5m']) {
+        const s = atf[tf] && atf[tf].activeSetup;
+        if (s && s.zoneTF === tf && s.status === 'ENTRY_TRIGGERED') autoEnter(s);
+        const comp = a.completedByTF && a.completedByTF[tf];
+        if (comp) {
+          for (const t of comp.slice(-8)) {
+            if (!t || t.zoneTF !== tf || !t.zoneTime) continue;
+            if (paper.pos.some(x => x.setupKey === autoKey(t))) autoExit(t);
+          }
         }
       }
     } catch (e) {}
@@ -526,18 +628,147 @@
     h += '<div class="ab-row">DEMO <b>₹' + fmt(j.cash) + '</b> · OPEN <b>' + open + '</b> · TODAY <b>' + (j.entriesToday || 0) + '</b>' +
       ' · NET <b class="' + (j.netPnl >= 0 ? 'up' : 'dn') + '">' + (j.netPnl >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(j.netPnl || 0)) + '</b>' +
       ' · ' + (j.wins || 0) + 'W/' + (j.losses || 0) + 'L</div>';
-    const s = j.active;
-    if (s && s.entry != null) {
-      h += '<div class="ab-row ab-act">' + (s.direction || '') + ' ' + (s.zoneTF || '') + 'm · E ₹' + fmt(s.entry) +
-        ' · SL ₹' + fmt(s.stopLoss) + ' · T ₹' + fmt(s.target) + ' · ' + (s.status || '') + '</div>';
+    const acts = (j.actives && j.actives.length ? j.actives : (j.active ? [{ tf: j.active.zoneTF, setup: j.active }] : []));
+    for (const a2 of acts) {
+      const s = a2.setup;
+      if (s && s.entry != null) {
+        const ztf = String(s.zoneTF || a2.tf || '');
+        h += '<div class="ab-row ab-act">' + (s.direction || '') + ' ' + (/[mDWM]$/.test(ztf) ? ztf : ztf + 'm') + ' · E ₹' + fmt(s.entry) +
+          ' · SL ₹' + fmt(s.stopLoss) + ' · T ₹' + fmt(s.target) + ' · ' + (s.status || '') + '</div>';
+      }
     }
     for (const t of trades.slice(0, 5)) {
       h += '<div class="ab-tr ' + (t.pnl >= 0 ? 'up' : 'dn') + '">' +
         '<b>' + (t.pnl >= 0 ? '+' : '-') + '₹' + fmt(Math.abs(t.pnl)) + '</b>' +
-        '<span>' + t.strike + ' ' + t.side + ' · ' + t.qty + ' qty · ₹' + fmt(t.entry) + ' → ₹' + fmt(t.exit) + '</span>' +
+        '<span>' + t.strike + ' ' + t.side + (t.tf ? ' · ' + t.tf : '') + ' · ' + t.qty + ' qty · ₹' + fmt(t.entry) + ' → ₹' + fmt(t.exit) + '</span>' +
         '<em>' + (t.reason || 'AUTO') + '</em></div>';
     }
-    if (!trades.length && !open) h += '<div class="ab-row ab-idle">Market hours me 3m zone ki ENTRY bot lega — SL/Target par auto EXIT</div>';
+    // ── AI AGENT: SL reason + auto-fix status ──
+    const ag = j.agent;
+    if (ag && ag.params) {
+      const P = ag.params, S = ag.stats || {};
+      const cool = ag.cooldownLeftMs > 0 ? ' · PAUSE ' + Math.ceil(ag.cooldownLeftMs / 60000) + 'm' : '';
+      h += '<div class="ab-row ab-act">AI AGENT · ' + (S.targets || 0) + 'T / ' + (S.sls || 0) + 'SL' +
+        ' · win ' + (S.winRate || 0) + '%' + (S.whipsaw ? ' · ' + S.whipsaw + ' whipsaw' : '') + cool + '</div>';
+      h += '<div class="ab-row">SL FIX: buffer ' + Math.round((P.slBufAtr || 0) * 100) + '% ATR · target ×' + P.tgtMult +
+        ' · score ≥' + P.minScore + (P.trendAlign ? ' · trend-ON' : '') + (P.freshOnly ? ' · fresh-ON' : '') +
+        (P.allowStale === false ? ' · stale-OFF' : '') +
+        ' · <b>STRATEGY VERSION ' + (ag.version || 'v1.0') + '</b></div>';
+      if (ag.caution && ag.caution.on) {
+        h += '<div class="ab-row ab-act">⚠ CAUTION MODE: ' + String(ag.caution.reason || '') + ' — ' + String(ag.caution.investigate || '').slice(0, 140) + '</div>';
+      }
+      if (ag.validation) {
+        h += '<div class="ab-row">VALIDATION: ' + (ag.validation.key || '?') + ' = <b>' + (ag.validation.status || '?') + '</b>' +
+          (ag.validation.why ? ' — ' + String(ag.validation.why).slice(0, 130) : '') + '</div>';
+      }
+      const AI = ag.ai || {};
+      if (AI.enabled) {
+        h += '<div class="ab-row ab-act">GEMINI AI DOCTOR: ON' + (AI.calls ? ' — ' + AI.calls + ' calls' : '') + '</div>';
+        if (AI.last && AI.last.reason) {
+          h += '<div class="ab-tr"><b>AI-DIAG</b><span>' + String(AI.last.reason).slice(0, 150) +
+            (AI.last.fix && AI.last.fix.length ? ' — ' + AI.last.fix.join(', ') : '') + '</span></div>';
+        }
+      }
+      // requirement #9: LIVE MARKET ANALYSIS panel (real data — snap)
+      const SN = ag.snap;
+      if (SN && SN.dataOk) {
+        h += '<div class="ab-row ab-act">LIVE MARKET ANALYSIS</div>';
+        h += '<div class="ab-row">Trend: 1m ' + ((SN.trends && SN.trends['1m']) || '—') + ' · 5m ' + ((SN.trends && SN.trends['5m']) || '—') +
+          ' · 15m ' + ((SN.trends && SN.trends['15m']) || '—') + '</div>';
+        h += '<div class="ab-row">Market Structure: ' + ((SN.structure && SN.structure['5m']) || '—') +
+          (SN.structure && SN.structure['15m'] ? ' · 15m ' + SN.structure['15m'] : '') + '</div>';
+        h += '<div class="ab-row">Market Condition: ' + (SN.condition || '—') + ' · ATR vol ×' + ((SN.atrVol && SN.atrVol['5m']) || 1) + '</div>';
+        // requirement #17: engine facts — HTF location / ITF trend (50SMA) / LTF / Curve
+        const EN = ag.engine;
+        if (EN) {
+          const crv = EN.curve;
+          h += '<div class="ab-row">HTF: 15m ' + (EN.trends && EN.trends['15m'] || '—') + ' · 30m ' + (EN.trends && EN.trends['30m'] || '—') +
+            ' · ITF(50SMA 5m): ' + (EN.sma50 && EN.sma50['5m'] != null ? '₹' + fmt(EN.sma50['5m']) + ' (' + (EN.trends && EN.trends['5m'] || '—') + ')' : (EN.trends && EN.trends['5m'] || '—')) + '</div>';
+          h += '<div class="ab-row">Curve: ' + (crv && crv.pos && crv.pos !== 'N/A' ? crv.pos + (crv.pct != null ? ' (' + crv.pct + '%)' : '') : '—') +
+            ' · Regime: ' + (EN.regime || '—') + (EN.price ? ' · LTP ₹' + fmt(EN.price) : '') + '</div>';
+        }
+        const z0 = acts[0] && acts[0].setup;
+        if (z0 && z0.entry != null) {
+          h += '<div class="ab-row">Active Zone: ' + z0.zoneTF + ' ' + z0.direction + ' · E ₹' + fmt(z0.entry) +
+            ' · SL ₹' + fmt(z0.stopLoss) + ' · T ₹' + fmt(z0.target) +
+            ' · Zone Strength: score ' + z0.zoneScore + ' (' + (z0.zoneFreshness || '') + ')</div>';
+        } else {
+          h += '<div class="ab-row">Active Zone: koi nahi (scan chalu)</div>';
+        }
+        h += '<div class="ab-row">Current Risk: ' +
+          (S.consecSL ? 'lagatar ' + S.consecSL + ' SL' : (ag.cooldownLeftMs > 0 ? 'entry PAUSE chalu' : 'normal')) +
+          ' · SL buffer ' + Math.round(P.slBufAtr * 100) + '% ATR · score ≥' + P.minScore + '</div>';
+      }
+      // requirement #6: pending SUGGESTION — approval par hi lagta hai
+      const SUG = ag.suggest;
+      if (SUG) {
+        h += '<div class="ab-tr"><b>SUGGEST</b><span>' + SUG.k + ' = ' + SUG.v + ' — ' + String(SUG.why || '').slice(0, 110) +
+          ' (chat me bolo "apply karo")</span></div>';
+      }
+      // ── MARKET INTELLIGENCE: global + news + FII/DII + calendar (real data, source+time+status) ──
+      const esc = x => String(x == null ? '' : x).replace(/[<>]/g, '');
+      const MI = ag.intel;
+      if (MI && (MI.globalLine || MI.headline)) {
+        h += '<div class="ab-row ab-act">MARKET INTEL</div>';
+        if (MI.globalLine) h += '<div class="ab-row">GLOBAL: ' + esc(MI.globalLine).slice(0, 170) + ' <span style="color:#667">(DELAYED feeds)</span></div>';
+        if (MI.headline) h += '<div class="ab-row">NEWS [' + esc(MI.headline.impact) + '] ' + esc(MI.headline.t).slice(0, 95) +
+          ' — ' + esc(MI.headline.src) + ' · ' + esc(MI.headline.time) + ' · ' + esc(MI.headline.v) + '</div>';
+        if (MI.fii) h += '<div class="ab-row">' + (MI.fii.status === 'CONFIRMED DATA' && MI.fii.net != null
+          ? 'FII/DII: net ₹' + Math.round(MI.fii.net).toLocaleString('en-IN') + ' Cr (' + esc(MI.fii.date) + ' · CONFIRMED — NSE)'
+          : 'FII/DII: UNAVAILABLE (NSE data nahi mila)') + '</div>';
+        if (MI.nextEvent) h += '<div class="ab-row">NEXT EVENT: ' + esc(MI.nextEvent.t) + ' — ' + esc(MI.nextEvent.at) +
+          ' (' + esc(MI.nextEvent.impact) + ' impact · ' + esc(MI.nextEvent.src) + ')</div>';
+      }
+      // requirement #9 + #10: ⚠ STOP LOSS DETECTED → ROOT CAUSE report (PDF facts + fix + validation + version)
+      const SLA = (ag.slAnalysis || []).slice(-1)[0];
+      if (SLA) {
+        if (SLA.causeCode) {
+          h += '<div class="ab-row ab-act">⚠ STOP LOSS DETECTED → ROOT CAUSE [' + SLA.causeCode + '] (' + (SLA.tf || '') + ' ' + (SLA.dir || '') +
+            (SLA.confidence != null ? ' · conf ' + SLA.confidence + '%' : '') + ')</div>';
+          h += '<div class="ab-row">Root Cause: ' + String(SLA.primaryRootCause || SLA.primaryReason || '—').slice(0, 140) +
+            (SLA.secondaryCause ? ' · Secondary: ' + String(SLA.secondaryCause).slice(0, 60) : '') + '</div>';
+          h += '<div class="ab-row">Zone/Entry: ' + (SLA.zoneType || '—') + ' · ' + (SLA.pattern || '—') +
+            ' · score ' + (SLA.tradeScore != null ? SLA.tradeScore : '—') + (SLA.fresh ? ' · ' + SLA.fresh : '') +
+            ' · Entry Type ' + (SLA.entryType || '—') + (SLA.baseCount ? ' · base ' + SLA.baseCount : '') +
+            (SLA.authentic === false ? ' · NON-AUTHENTIC' : '') + '</div>';
+          h += '<div class="ab-row">HTF/ITF/LTF: ' + String(SLA.htfLocation || '—').slice(0, 40) + ' / ' + String(SLA.itfTrend || '—').slice(0, 30) +
+            ' / ' + String(SLA.ltfExecution || '—').slice(0, 30) + ' · Curve: ' + String(SLA.curve || '—').slice(0, 40) + '</div>';
+          h += '<div class="ab-row">Post-SL: ' + String(SLA.postSl || '—').slice(0, 90) +
+            ' · SL Placement: ' + (SLA.slPlacement || '—') + ' · ATR: ' + (SLA.atrAnalysis || '—') + '</div>';
+          if (SLA.explanation) h += '<div class="ab-row">Explanation: ' + String(SLA.explanation).slice(0, 170) + '</div>';
+          if (SLA.dataOk === false) h += '<div class="ab-row ab-act">Insufficient market data for reliable root-cause analysis.</div>';
+          // AUTO FIX + VALIDATION + OLD/NEW RULE + VERSION (#11-#14)
+          if (SLA.fix && SLA.fix.k != null) {
+            h += '<div class="ab-row">AUTO FIX: ' + SLA.fix.k + ' = ' + SLA.fix.v + ' — ' + String(SLA.fix.why || '').slice(0, 110) + '</div>';
+            if (SLA.validation) h += '<div class="ab-row">VALIDATION: <b>' + SLA.validation.status + '</b> — ' + String(SLA.validation.why || '').slice(0, 130) + '</div>';
+            const ver = (ag.versions || []).filter(v2 => v2.key === SLA.fix.k).pop();
+            if (ver) h += '<div class="ab-row">RULE: ' + ver.key + ' ' + ver.oldVal + ' → ' + ver.newVal + ' · ' + ver.v +
+              (SLA.action === 'ACTIVATED' ? ' · ACTIVE (auto, rollback par purana wapas)' : ' · pending approval ("apply karo")') + '</div>';
+            else h += '<div class="ab-row">RULE: ' + SLA.fix.k + ' ' + SLA.fix.v + ' (pending — "apply karo" bolo) · ' + (SLA.version || ag.version || 'v1.0') + '</div>';
+          } else if (SLA.fixNote) {
+            h += '<div class="ab-row">AUTO FIX: ' + String(SLA.fixNote).slice(0, 130) + '</div>';
+          }
+          h += '<div class="ab-row">STRATEGY VERSION: ' + (SLA.version || ag.version || 'v1.0') +
+            (ag.versions && ag.versions.length ? ' · ' + ag.versions.length + ' changes (rollback on)' : '') +
+            (SLA.action === 'ACTIVATED' ? ' · <b>new rule ACTIVE</b>' : '') + '</div>';
+        } else {
+          h += '<div class="ab-row ab-act">⚠ STOP LOSS DETECTED (' + (SLA.tf || '') + ' ' + (SLA.dir || '') + ')</div>';
+          h += '<div class="ab-row">Reason: ' + String(SLA.primaryReason || '—').slice(0, 150) + (SLA.category ? ' [' + SLA.category + ']' : '') + '</div>';
+          h += '<div class="ab-row">Market Analysis: ' + String(SLA.mistake || SLA.marketCondition || '—').slice(0, 130) +
+            (SLA.afterSl ? ' · after SL: ' + String(SLA.afterSl).slice(0, 60) : '') + '</div>';
+          h += '<div class="ab-row">Recommended Improvement: ' + String(SLA.improvement || '—').slice(0, 150) + '</div>';
+          h += '<div class="ab-row">ATR change: ' + (SLA.atrChange && SLA.atrChange.yes
+            ? 'YES (' + SLA.atrChange.old + ' → ' + SLA.atrChange.new + ')'
+            : 'NO (reason ATR me nahi)') +
+            ' · Zone: ' + (SLA.zoneAnalysis || '-') + ' · Entry: ' + (SLA.entryAnalysis || '-') + ' · SL: ' + (SLA.slAnalysis || '-') + '</div>';
+        }
+      }
+      for (const l of (ag.log || []).slice(0, 3)) {
+        h += '<div class="ab-tr"><b>' + (l.type || 'AI') + '</b><span>' + (l.msg || '') + '</span></div>';
+      }
+      h += '<div class="ab-row ab-idle">Agent se baat karo — corner me 🤖 button dabao (mic se bolo ya type karo)</div>';
+    }
+    if (!trades.length && !open) h += '<div class="ab-row ab-idle">Market hours me 3m+5m zone ki ENTRY bot lega — SL/Target par auto EXIT · AI agent SL ka asli reason batata hai (sirf ATR nahi) — fix ki suggestion apply aap karoge</div>';
     el.innerHTML = h;
   }
 
@@ -547,7 +778,7 @@
     cExpiry = cExpiry || '';
     loadChain();
     if (cTimer) clearInterval(cTimer);
-    cTimer = setInterval(loadChain, 5000);
+    cTimer = setInterval(() => { loadChain(); loadAutoBot(); }, 5000);
   }
   function closeChain() {
     $('chainScreen').style.display = 'none';

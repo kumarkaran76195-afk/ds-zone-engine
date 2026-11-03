@@ -1,15 +1,20 @@
 package com.dszone.engine;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.PermissionRequest;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.LinearLayout;
@@ -28,7 +33,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private AdView adView;
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "InlinedApi"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -65,6 +70,29 @@ public class MainActivity extends Activity {
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+
+        // AI Agent chat — mic permission (voice baat ke liye)
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+        }
+        // WebView ko mic permission grant karo (SpeechRecognition ke liye)
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            request.grant(request.getResources());
+                            Log.i(TAG, "mic permission granted to " + request.getOrigin());
+                        } catch (Throwable t) {
+                            Log.w(TAG, "grant failed: " + t.getMessage());
+                        }
+                    }
+                });
+            }
+        });
 
         webView.setWebViewClient(new WebViewClient() {
             @Override

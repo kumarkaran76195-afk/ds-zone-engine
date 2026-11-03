@@ -1,7 +1,34 @@
 /* ============================================================
-   DS ZONE ENGINE v1.0 — Core Trading Engine
+   DS ZONE ENGINE v1.1 — Core Trading Engine (BACKTEST ONLY)
    Demand & Supply Zone Detection + Auto Trade Setup
+   ------------------------------------------------------------
+   SYSTEM RULES (locked — AI/agent inhe override nahi kar sakta):
+   • Zone: 1-5 base candles (body < 50% range) + explosive legout
+     DBR/RBR = DEMAND (buy), RBD/DBD = SUPPLY (sell)
+     Proximal = base body edge, Distal = base wick edge
+   • Trend filter (SMA50 + 7-candle count):
+     UP trend = sirf DEMAND (buy), DOWN trend = sirf SUPPLY (sell)
+     SIDeways = kuch nahi (no zones, no trades)
+    • Entry: FIRST TOUCH par proximal pe LIMIT entry (fresh zone
+      hi), unlimited trades/day, session 09:15–15:15 IST
+    • Stop-loss: distal ∓ 0.10 × ATR(14) — zone invalid yahin hota hai
+    • Target: risk × 2 (PDF 2:1 — double of Entry−SL; ex: E125 SL120 T135)
+   • Exit: 15:15 EOD square-off; ek hi candle me SL+target dono
+     touch ho to → SL (conservative)
+   • BACKTEST ONLY: ye engine sirf signal/simulation deta hai —
+     live trading me koi bhi trade execute nahi hota.
    ============================================================ */
+
+const SYS_RULES = Object.freeze({
+  slBufAtr: 0.10,        // SL = distal ∓ 0.10 × ATR(14)
+  entryBufAtr: 0,        // entry = proximal bilkul (limit order)
+  tgtMult: 2,            // PDF: target = risk × 2 (2:1 — double of Entry−SL)
+  minRR: 2,              // PDF: setup ko 2:1 permit karna chahiye
+  freshOnly: true,       // sirf FRESH zone (first touch)
+  maxTradesPerDay: 999,  // unlimited — 09:15–15:15 jitne bane utne auto-trade
+  sessionStart: 555,     // 09:15 IST (minutes since midnight)
+  sessionEnd: 915        // 15:15 IST — isi par square-off
+});
 
 const CandleEngine = {
   classify(c) {
@@ -37,6 +64,21 @@ const ATREngine = {
     return atr;
   }
 };
+
+// candles kam hone par ATR(14) null aata tha — pehle `|| 1` (1 POINT) lagta tha
+// aur "4 ATR door" filter 4 POINT par lag jata tha → sab zone reject. Isliye
+// simple true-range average se fallback ATR.
+function simpleAtr(candles) {
+  if (!candles || candles.length < 2) return 0;
+  const start = Math.max(1, candles.length - 14);
+  let s = 0, n = 0;
+  for (let i = start; i < candles.length; i++) {
+    const c = candles[i], p = candles[i - 1];
+    s += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    n++;
+  }
+  return n ? s / n : 0;
+}
 
 const TrendEngine = {
   sma(closes, p = 50) {
@@ -160,7 +202,8 @@ const ZoneEngine = {
 
   detect(candles, trendDir) {
     const zones = [];
-    // TREND FILTER: UP me sirf BUY (demand) zone, DOWN me sirf SELL (supply) zone, sideways me dono
+    // TREND FILTER: UP me sirf DEMAND (buy), DOWN me sirf SUPPLY (sell),
+    // SIDeways me DONO (upar-baadar dono taraf ka setup chalega)
     const wantDemand = trendDir !== 'down';
     const wantSupply = trendDir !== 'up';
     // last candle = live legout — zone turant bane, 1 candle wait nahi
@@ -232,28 +275,21 @@ const ZoneEngine = {
 
 const TradeScorer = {
   MIN_SCORE: 5,
-  MAX_SCORE: 11,
-  // PDF (Trade Score page): level chhodne ki power + freshness + base candles + trend + CMP proximity
+  MAX_SCORE: 7,
+  // PDF (Trade Score page 32): sirf 3 components = max 7
+  //   legout (0-3) + freshness (0-2) + base candles (0-2)
+  // trend/curve alag filter hain — score me add NAHI (PDF score = 7 max)
   score(z, trend, price, currentAtr, loc) {
     let s = 0;
-    if (z.gapOut) s += 3;                                   // price level chhoda gap ke saath
-    else if (z.legout && z.legout.isExciting) s += 2;       // 2/1 exciting candle leave
+    // legout strength (0-3): gap leave = 3, explosive/exciting leave = 2, normal = 1
+    if (z.gapOut) s += 3;
+    else if (z.legout && (z.legout.isExplosive || z.legout.isExciting)) s += 2;
     else s += 1;
-    if (z.fresh) s += 2; else if (z.tested <= 1) s += 1;    // fresh / tested once / twice+
+    // freshness (0-2): fresh = 2, tested once = 1, tested twice+ = 0
+    if (z.fresh) s += 2; else if (z.tested <= 1) s += 1;
+    // base candles (0-2): 1-3 = 2, 4-5 = 1, >5 = 0
     const bc = z.baseCount || 1;
-    s += bc <= 3 ? 3 : bc <= 5 ? 2 : 1;                     // 1-3 base = best
-    // PDF: trend/curve se aligned +, against − (block nahi, sirf score)
-    if (trend) {
-      if (z.type === 'demand' && trend.trend === 'up') s += 1;
-      else if (z.type === 'supply' && trend.trend === 'down') s += 1;
-      else if (trend.trend === 'sideways') s -= 1;
-      else s -= 2;
-    }
-    if (loc && ((loc.action === 'BUY' && z.type === 'supply') || (loc.action === 'SELL' && z.type === 'demand'))) s -= 2;
-    if (price && currentAtr > 0) {
-      const r = Math.abs(z.proximal - price) / currentAtr;
-      if (r < 0.5) s += 2; else if (r < 1) s += 1;
-    }
+    s += bc <= 3 ? 2 : bc <= 5 ? 1 : 0;
     // PDF note: score 7 -> entry type 1, 5-6 -> type 2/3, <5 -> no trade
     const entryType = s >= 7 ? 1 : s >= 6 ? 2 : 3;
     return { score: s, entryType, maxScore: this.MAX_SCORE, tradeable: s >= this.MIN_SCORE };
@@ -266,7 +302,7 @@ const TradeScorer = {
 };
 
 const RiskManager = {
-  target(entry, sl, isBuy) { const r = Math.abs(entry - sl); return isBuy ? entry + r * 2 : entry - r * 2; },
+  target(entry, sl, isBuy, mult) { const r = Math.abs(entry - sl), m = mult > 0 ? mult : 2; return isBuy ? entry + r * m : entry - r * m; },
   rr(entry, sl, tgt) { const r = Math.abs(entry - sl), w = Math.abs(tgt - entry); return r > 0 ? w / r : 0; },
   calc(capital, pct, entry, sl) {
     const rpu = Math.abs(entry - sl); if (rpu <= 0) return null;
@@ -304,14 +340,154 @@ class DSEngine {
     this.zonesByTF = {};
     this.allZonesByTF = {};
     this.completedByTF = {};
+    this.htfLog = {};   // D/W/M zone history — purane E/SL/T bane rahe, naye add hote rahe
+    this.sym = null;   // useSymbol(sym) se zones per-symbol persist hote hain
     this.capital = 100000;
     this.riskPct = 1;
     this.maxTradesPerMonth = 10;
+    this.maxTradesPerDay = SYS_RULES.maxTradesPerDay;   // unlimited (999) — session me jitne bane
+    // AI AGENT tuning — base values SYSTEM RULES se (slBuf 0.10, target ×2 = 2:1, fresh only)
+    this.tuning = {
+      slBufAtr: SYS_RULES.slBufAtr, entryBufAtr: SYS_RULES.entryBufAtr, tgtMult: SYS_RULES.tgtMult,
+      minScore: 5, minRR: SYS_RULES.minRR,
+      maxAtrDist: 7, trendAlign: false, freshOnly: SYS_RULES.freshOnly, allowStale: true,
+      // 3m/5m par wide zone = bahut bada SL + target (2R) — 1.5 ATR se chaudi zone reject
+      maxZoneWidthAtr: 1.5
+    };
     this.history = this._loadHistory();
     this.usedZones = this._loadUsedZones();
+    this.entryLog = this._loadEntryLog();   // aaj-kitni-entries (unlimited/day rule)
     this._nearbyNote = null;
   }
+
+  // ── ZONE PERSIST: refresh/restart ke baad bhi aaj ke active zone wapas aayein ──
+  // (page refresh par engine naya banta tha aur ENTRY_TRIGGERED/ARMED zone
+  //  khali ho jata tha — phir se entry milti ya zone galat re-form hota)
+  useSymbol(s) {
+    this.sym = s;
+    this.activeByTF = this._loadActive();
+    this.completedByTF = this._loadCompleted();
+    this.htfLog = this._loadHtfLog();
+  }
+  _istDayOf(ts) { return new Date((ts || 0) + 19800000).toISOString().slice(0, 10); }
+  _loadActive() {
+    if (!this.sym) return {};
+    try {
+      const all = JSON.parse(localStorage.getItem('ds_active') || '{}');
+      const byTF = (all && all[this.sym]) || {};
+      const today = this._istDay(Date.now()), out = {};
+      for (const tf of Object.keys(byTF)) {
+        const st = byTF[tf];
+        if (!st || typeof st !== 'object') continue;
+        if (!this._isActive(st)) continue;                              // closed setup restore mat karo
+        if (this._istDayOf(st.createdAt || st.zoneTime) !== today) continue;  // purana din drop
+        out[tf] = st;
+      }
+      return out;
+    } catch { return {}; }
+  }
+  _saveActive() {
+    if (!this.sym) return;   // server auto-bot ka apna alag persist hai
+    try {
+      const all = JSON.parse(localStorage.getItem('ds_active') || '{}') || {};
+      const byTF = {};
+      for (const tf of Object.keys(this.activeByTF)) {
+        const st = this.activeByTF[tf];
+        if (st && this._isActive(st)) byTF[tf] = st;
+      }
+      all[this.sym] = byTF;
+      localStorage.setItem('ds_active', JSON.stringify(all));
+    } catch {}
+  }
+  _loadCompleted() {
+    if (!this.sym) return {};
+    try {
+      const all = JSON.parse(localStorage.getItem('ds_completed') || '{}');
+      const byTF = (all && all[this.sym]) || {};
+      const out = {};
+      for (const tf of Object.keys(byTF)) {
+        const arr = Array.isArray(byTF[tf]) ? byTF[tf] : [];
+        out[tf] = arr.filter(t => t && t.hitTime).slice(-10);
+      }
+      return out;
+    } catch { return {}; }
+  }
+  _saveCompleted() {
+    if (!this.sym) return;
+    try {
+      const all = JSON.parse(localStorage.getItem('ds_completed') || '{}') || {};
+      const byTF = {};
+      for (const tf of Object.keys(this.completedByTF)) byTF[tf] = (this.completedByTF[tf] || []).slice(-10);
+      all[this.sym] = byTF;
+      localStorage.setItem('ds_completed', JSON.stringify(all));
+    } catch {}
+  }
+
+  // ── D/W/M ZONE HISTORY: purane zone (E/SL/T) hamesha bane rahein, naye add hote rahein ──
+  // (din drop NAHI — monthly/weekly zone hafte-mahine chalte hain; cap 15 per TF)
+  _loadHtfLog() {
+    if (!this.sym) return {};
+    try {
+      const all = JSON.parse(localStorage.getItem('ds_htf_zones') || '{}') || {};
+      const byTF = all[this.sym] || {};
+      const out = {};
+      for (const tf of ['1D', '1W', '1M']) {
+        const arr = Array.isArray(byTF[tf]) ? byTF[tf] : [];
+        out[tf] = arr.filter(z => z && z._k && z.entry != null).slice(0, 15);
+      }
+      return out;
+    } catch { return {}; }
+  }
+  _saveHtfLog() {
+    if (!this.sym) return;
+    try {
+      const all = JSON.parse(localStorage.getItem('ds_htf_zones') || '{}') || {};
+      const byTF = {};
+      for (const tf of Object.keys(this.htfLog)) byTF[tf] = (this.htfLog[tf] || []).slice(0, 15);
+      all[this.sym] = byTF;
+      localStorage.setItem('ds_htf_zones', JSON.stringify(all));
+    } catch {}
+  }
+
   setAccount(c, p) { this.capital = c; this.riskPct = p; }
+
+  // AI agent yahan se SL buffer / score / filters adjust karta hai —
+  // lekin SYSTEM RULES (entry/SL/target/fresh) hamesha enforce rehti hain
+  setTuning(t) {
+    if (t) this.tuning = Object.assign({}, this.tuning, t);
+    Object.assign(this.tuning, {
+      slBufAtr: SYS_RULES.slBufAtr, entryBufAtr: SYS_RULES.entryBufAtr,
+      tgtMult: SYS_RULES.tgtMult, minRR: SYS_RULES.minRR, freshOnly: SYS_RULES.freshOnly
+    });
+    return this.tuning;
+  }
+
+  // ── IST session helpers: 09:15–15:15 entry window, 15:15 square-off ──
+  _istMinutes(ts) { const d = new Date((ts || Date.now()) + 19800000); return d.getUTCHours() * 60 + d.getUTCMinutes(); }
+  _istDay(ts) { return new Date((ts || Date.now()) + 19800000).toISOString().slice(0, 10); }
+  // 'pre' (09:15 se pehle) | 'open' (09:15–15:14) | 'post' (15:15 ke baad)
+  _session(ts) {
+    const m = this._istMinutes(ts);
+    if (m < SYS_RULES.sessionStart) return 'pre';
+    if (m < SYS_RULES.sessionEnd) return 'open';
+    return 'post';
+  }
+
+  _loadEntryLog() {
+    try {
+      const a = JSON.parse(localStorage.getItem('ds_entry_log') || '[]');
+      const now = Date.now();
+      return (Array.isArray(a) ? a : []).filter(t => typeof t === 'number' && now - t < 7 * 86400000);
+    } catch { return []; }
+  }
+  _saveEntryLog() { try { localStorage.setItem('ds_entry_log', JSON.stringify(this.entryLog.slice(-20))); } catch {} }
+  _entriesToday() { const k = this._istDay(Date.now()); return this.entryLog.filter(t => this._istDay(t) === k).length; }
+  _markEntryLogged(s) {
+    if (s && s._loggedEntry) return;
+    if (s) s._loggedEntry = true;
+    this.entryLog.push(Date.now());
+    this._saveEntryLog();
+  }
 
   _effTrend(trend, regime) {
     if (trend && trend.trend && trend.trend !== 'sideways') return trend;
@@ -386,17 +562,20 @@ class DSEngine {
     if (!this.completedByTF[tf]) this.completedByTF[tf] = [];
     this.completedByTF[tf].push({ ...setup, hitStatus: status, hitTime: timeStr });
     if (this.completedByTF[tf].length > 20) this.completedByTF[tf].shift();
+    this._saveCompleted();
+    this._saveActive();   // exited setup active list se hatao + persist
   }
 
   getDailyHistory() {
     const daily = {};
     for (const h of this.history) {
-      if (!daily[h.date]) daily[h.date] = { targets: 0, sls: 0, invalids: 0, total: 0, trades: [] };
+      if (!daily[h.date]) daily[h.date] = { targets: 0, sls: 0, invalids: 0, sqOffs: 0, total: 0, trades: [] };
       daily[h.date].trades.push(h);
       daily[h.date].total++;
       if (h.status === 'TARGET_HIT') daily[h.date].targets++;
       else if (h.status === 'STOP_LOSS_HIT') daily[h.date].sls++;
       else if (h.status === 'INVALIDATED') daily[h.date].invalids++;
+      else if (h.status === 'SQUARE_OFF') daily[h.date].sqOffs++;
     }
     return daily;
   }
@@ -415,29 +594,29 @@ class DSEngine {
       valid.push(z);                                             // fresh + tested once/twice chalte hain (score me fark)
     }
 
-    // chart/panel ke liye: saare usable zones (fresh + tested <=2), koi aur filter nahi
-    const allUsable = zones.filter(z => z.tested <= 2)
+    // chart/panel ke liye: used zones (SL/Target ke baad) mat dikhao — sirf fresh usable
+    const allUsable = zones.filter(z => z.tested <= 2 && !this.usedZones[this._zoneKey(z)])
       .sort((a, b) => b.zoneTime - a.zoneTime).slice(0, 40);
     this.allZonesByTF[tf] = allUsable;
 
-    // TREND FILTER: UP me sirf BUY zone, DOWN me sirf SELL zone banega, sideways me dono
+    // TREND FILTER (strict): UP me sirf BUY zone, DOWN me sirf SELL zone, sideways me KUCH NAHI
     if (trendDir === 'up') this._nearbyNote = 'Uptrend — sirf BUY (demand) zone banega';
     else if (trendDir === 'down') this._nearbyNote = 'Downtrend — sirf SELL (supply) zone banega';
-    else if (trendDir === 'sideways') this._nearbyNote = 'Sideways — score me penalty lagega';
+    else this._nearbyNote = 'Sideways — trend filter OFF, BUY + SELL dono zone ban sakte hain';
     if (!valid.length) {
       if (nonAuthCount && !usedCount && !testedCount) this._nearbyNote = 'WAIT — Non-authentic zone mile, non-tradeable (PDF)';
       else if (testedCount && !usedCount) this._nearbyNote = 'WAIT — Zone 2 se zyada test ho chuka hai';
       else if (usedCount) this._nearbyNote = 'WAIT — Zone pehle use ho chuka hai, naye zone ka wait';
       else if (trendDir === 'up') this._nearbyNote = 'WAIT — Uptrend: koi BUY zone nahi bana';
       else if (trendDir === 'down') this._nearbyNote = 'WAIT — Downtrend: koi SELL zone nahi bana';
-      else this._nearbyNote = 'WAIT — Koi zone nahi mila';
+      else this._nearbyNote = 'WAIT — Sideways: koi valid zone structure nahi bana';
       return [];
     }
 
     const trendFiltered = valid;
     trendFiltered.forEach(z => { z.tradeScore = TradeScorer.score(z, ignoreTrend ? null : trend, price, currentAtr, ignoreTrend ? null : this._location); });
-    // sort: score desc, tabhi fresh zone ko pehle mauka (PDF: fresh zone hi lena hai)
-    trendFiltered.sort((a, b) => (b.tradeScore.score - a.tradeScore.score) || ((b.fresh ? 1 : 0) - (a.fresh ? 1 : 0)));
+    // sort: score desc, fresh pehle, TIE me sabse PAAS wala zone (retest distance chhota = better)
+    trendFiltered.sort((a, b) => (b.tradeScore.score - a.tradeScore.score) || ((b.fresh ? 1 : 0) - (a.fresh ? 1 : 0)) || (Math.abs(a.proximal - price) - Math.abs(b.proximal - price)));
     const nearby = [];
     let farCount = 0;
     for (const z of trendFiltered) {
@@ -450,9 +629,11 @@ class DSEngine {
     return nearby;
   }
 
-  analyze(ltf1, ltf3, ltf5, itf15, itf30, price, selectedTF) {
+  analyze(ltf1, ltf3, ltf5, itf15, itf30, price, selectedTF, htf) {
+    // 15:15 ke baad pehle sab active setups square-off ho jayen
+    this._eodSquareOff();
     if (ltf3.length < 5) {
-      return { status: 'NO_SETUP', reason: `Need ${5 - ltf3.length} more 3m candles`, price };
+      return { status: 'NO_SETUP', reason: `Need ${5 - ltf3.length} more 3m candles`, price, backtestOnly: true, session: this._session() };
     }
 
     const c1 = CandleEngine.classifyAll(ltf1), c3 = CandleEngine.classifyAll(ltf3);
@@ -496,7 +677,7 @@ class DSEngine {
       if (cls.length < 3) continue;
 
       const eff = this._effTrend(trend, regime);
-      this._findNearbyZones(tf, cls, price, atr[atr.length - 1] || 1, eff, 10);
+      this._findNearbyZones(tf, cls, price, atr[atr.length - 1] || simpleAtr(raw) || 1, eff, 10);
       const existing = this.activeByTF[tf];
       if (existing && this._isActive(existing)) {
         // UP me SELL bhi chalega (neeche aa sakti hai), DOWN me BUY bhi (upar ja sakti hai) — PDF pullback
@@ -515,6 +696,92 @@ class DSEngine {
       this._findNextZone(tf, cls, price, atr, eff, allResults);
     }
 
+    // ── D/W/M (Higher Timeframe) — STRATEGY zones: near market + best score ──
+    // Intraday wale hi filters: trend, fresh/tested≤2, non-auth, width ≤1.5 ATR,
+    // Trade Score; phir sirf price ke PAAS ke best zones dikhao (door ke nahi):
+    //   pass A = score≥5 + 3 ATR andar → pass B = 7 ATR andar → pass C = best available
+    if (htf) {
+      const T = this.tuning;
+      const minScore = T.minScore || 5;
+      const htfDefs = [['1D', htf.d], ['1W', htf.w], ['1M', htf.m]];
+      for (const [tfk, raw] of htfDefs) {
+        if (!raw || raw.length < 30) continue;
+        const cc = CandleEngine.classifyAll(raw);
+        const cl = cc.map(c => c.close);
+        const sma = TrendEngine.sma(cl);
+        const atr = ATREngine.calculate(cc);
+        const t = TrendEngine.analyze(cl, sma, atr);
+        const atrv = atr[atr.length - 1] || simpleAtr(raw) || 1;
+        // same zone pipeline as intraday (trend filter + freshness)
+        const zones = ZoneEngine.detect(cc, t.trend);
+        ZoneEngine.markFreshness(zones, cc);
+        // STRATEGY quality filters — used / non-auth / tested>2 / wide zone (1.5 ATR) bahar
+        const valid = zones.filter(z =>
+          z.tested <= 2 &&
+          !this.usedZones[this._zoneKey(z)] &&
+          z.authentic !== false &&
+          (!T.maxZoneWidthAtr || atrv <= 0 || Math.abs(z.proximal - z.distal) / atrv <= T.maxZoneWidthAtr));
+        valid.forEach(z => { z.tradeScore = TradeScorer.score(z, t, price, atrv, this._location); });
+        const dist = z => Math.abs(z.proximal - price);
+        // NEAR MARKET ke pass hi zone chahiye — best wala banaye jahan banta hai
+        let best = valid.filter(z => dist(z) <= atrv * 3 && z.tradeScore.score >= minScore);
+        if (!best.length) best = valid.filter(z => dist(z) <= atrv * 7);
+        if (!best.length) best = valid;
+        // BEST first: score desc → fresh pehle → market ke sabse paas
+        best.sort((a, b) =>
+          (b.tradeScore.score - a.tradeScore.score) ||
+          ((b.fresh ? 1 : 0) - (a.fresh ? 1 : 0)) ||
+          (dist(a) - dist(b)));
+        best = best.slice(0, 6);
+        // ── PERSISTENT LOG: purane zone apni entry/SL/target ke saath bache rahe,
+        //    sirf naye zone add hon (dedupe = type|proximal|distal|zoneTime) ──
+        const log = this.htfLog[tfk] || [];
+        const byK = {};
+        log.forEach(x => { byK[x._k] = x; });
+        let changed = false;
+        for (const z of best) {
+          const k = this._zoneKey(z);
+          const isD = z.type === 'demand';
+          const entry = z.proximal;
+          const sl = isD ? z.distal - atrv * 0.10 : z.distal + atrv * 0.10;   // PDF: SL = distal ∓ 0.10×ATR
+          const risk = Math.abs(entry - sl);
+          const tgt = isD ? entry + risk * 2 : entry - risk * 2;              // PDF: target = 2R
+          if (byK[k]) {
+            // dobara mile → freshness/score update; entry/SL/target PURANE hi rahe
+            const o = byK[k];
+            if (o.fresh !== z.fresh || o.tested !== z.tested ||
+                ((o.tradeScore || {}).score !== (z.tradeScore || {}).score)) changed = true;
+            o.fresh = z.fresh; o.tested = z.tested; o.tradeScore = z.tradeScore;
+            continue;
+          }
+          const rec = {
+            _k: k, type: z.type, proximal: z.proximal, distal: z.distal, zoneTime: z.zoneTime,
+            fresh: z.fresh, tested: z.tested, authentic: z.authentic, tradeScore: z.tradeScore,
+            entry, sl, tgt, atr: atrv, addedAt: Date.now()
+          };
+          log.push(rec); byK[k] = rec; changed = true;
+        }
+        if (changed) {
+          log.sort((a, b) => (b.zoneTime || 0) - (a.zoneTime || 0));   // naye zone upar
+          while (log.length > 15) log.pop();                            // cap par hi purana hatao
+          this.htfLog[tfk] = log;
+          this._saveHtfLog();   // refresh ke baad bhi purane E/SL/T wapas
+        }
+        const disp = (this.htfLog[tfk] || []).length ? this.htfLog[tfk] : best;
+        this.allZonesByTF[tfk] = disp;
+        const nearNote = best.length && dist(best[0]) <= atrv * 3
+          ? 'near market (≤3 ATR, score ' + best[0].tradeScore.score + ')'
+          : disp.length ? 'purane zone + ' + (best.length ? 'near zone' : 'door wale') : 'koi valid zone nahi';
+        allResults[tfk] = {
+          status: 'HTF', tf: tfk, price, trend: t, sma50: t.smaVal, atr: atrv,
+          activeSetup: null, htf: true, nearbyZones: [],
+          reason: tfk + ' strategy zone — ' + nearNote + ' (setup intraday TF par hi banega)',
+          allFreshZones: disp.length, freshCount: disp.filter(z => z.fresh).length,
+          freshZones: disp
+        };
+      }
+    }
+
     const sel = selectedTF || '5m';
     const result = allResults[sel] || this._noResult(sel, 'No data', price, t1, atrMap['1m']);
     result.allTF = allResults;
@@ -525,26 +792,36 @@ class DSEngine {
     result.location = this._location;
     result.dailyHistory = this.getDailyHistory();
     result.completedByTF = this.completedByTF;
+    // BACKTEST-ONLY system info (UI panel + auto-bot dono isse dikhate hain)
+    result.backtestOnly = true;
+    result.session = this._session();
+    result.dailyEntries = this._entriesToday();
+    result.maxTradesPerDay = this.maxTradesPerDay;
+    this._saveActive();   // har analyze ke baad active zone persist (refresh par wapas aaye)
     return result;
   }
 
   // candidate me se best tradeable advance zone chuno (PDF: fresh > tested, score >=5, R:R ok)
   _pickZone(zones, price, currentAtr, opts) {
     opts = opts || {};
-    const minScore = opts.minScore || 5;
+    const T = this.tuning;
+    const minScore = opts.minScore || T.minScore || 5;
     const allowStale = !!opts.allowStale;
-    const entryBuffer = currentAtr * 0.02, slBuffer = currentAtr * 0.05;
-    const entryNear = currentAtr * 0.1;
-    const out = { best: null, entry: 0, sl: 0, tgt: 0, rr: 0, entryNear, lowScore: 0, staleCount: 0, behindCount: 0 };
+    const entryBuffer = currentAtr * (T.entryBufAtr != null ? T.entryBufAtr : SYS_RULES.entryBufAtr);
+    const slBuffer = currentAtr * (T.slBufAtr != null ? T.slBufAtr : SYS_RULES.slBufAtr);
+    const entryNear = 0;   // FIRST TOUCH: entry sirf proximal touch par trigger
+    const out = { best: null, entry: 0, sl: 0, tgt: 0, rr: 0, entryNear, lowScore: 0, staleCount: 0, behindCount: 0, wideCount: 0 };
     for (const z of zones) {
       if (!z.tradeScore) continue;
       if (z.tradeScore.score < minScore) { out.lowScore = Math.max(out.lowScore, z.tradeScore.score); continue; }
       const isBuyZ = z.type === 'demand';
+      // AI AGENT: bahut wide zone = bahut bada SL distance → skip
+      if (T.maxZoneWidthAtr && currentAtr > 0 && Math.abs(z.proximal - z.distal) / currentAtr > T.maxZoneWidthAtr) { out.wideCount++; continue; }
       const e = isBuyZ ? z.proximal + entryBuffer : z.proximal - entryBuffer;
       const l = isBuyZ ? z.distal - slBuffer : z.distal + slBuffer;
-      const t = RiskManager.target(e, l, isBuyZ);
+      const t = RiskManager.target(e, l, isBuyZ, T.tgtMult);
       const r = RiskManager.rr(e, l, t);
-      if (r < 1) continue;
+      if (r < (T.minRR != null ? T.minRR : 1)) continue;
       if (!allowStale && (isBuyZ ? price >= t : price <= t)) { out.staleCount++; continue; }   // market already target paar
       // ADVANCE zone: entry market ke AAGE — BUY me entry LTP se neeche (retest pending), SELL me upar
       if (isBuyZ ? price < e : price > e) { out.behindCount++; continue; }
@@ -556,20 +833,41 @@ class DSEngine {
   }
 
   _findNextZone(tf, cls, price, atr, trend, allResults) {
-    const currentAtr = atr[atr.length - 1] || 1;
+    const currentAtr = atr[atr.length - 1] || simpleAtr(cls) || 1;
+    const T = this.tuning;
     // PDF page 37: max 10 trades/month — limit par setup/BUY-SELL dikhate hain, sirf warning flag
     const monthLimitReached = this._monthTrades() >= this.maxTradesPerMonth;
 
-    // pass A: 3 ATR + poora score; B: 7 ATR; C: 7 ATR trend/curve penalty ke bina; D: last-resort (stale zone bhi chalega)
+    // SESSION GATE: naya setup sirf 09:15–15:15 IST ke andar banta hai
+    const sess = this._session();
+    if (sess !== 'open') {
+      allResults[tf] = this._noResult(tf, sess === 'pre'
+        ? 'Session se pehle — entry window 09:15–15:15 IST'
+        : '15:15 EOD ke baad — entry band (square-off ho chuka)', price, trend, atr);
+      return;
+    }
+    // DAILY LIMIT: unlimited (999) — session (09:15–15:15) me jitne bane utne auto-trade
+    if (this._entriesToday() >= this.maxTradesPerDay) {
+      allResults[tf] = this._noResult(tf, 'Aaj ke ' + this.maxTradesPerDay + ' trades ho gaye — entry band', price, trend, atr);
+      return;
+    }
+
+    // pass A: 3 ATR + poora score; B: max ATR; C: trend/curve penalty ke bina; D: last-resort (stale zone bhi chalega)
     let pick = { best: null }, lastZones = [], lastNote = null;
     const passes = [
       { d: 3, ignore: false, opts: {} },
-      { d: 7, ignore: false, opts: {} },
-      { d: 7, ignore: true, opts: {} },
-      { d: 7, ignore: true, opts: { allowStale: true } }
+      { d: T.maxAtrDist, ignore: false, opts: {} },
+      { d: T.maxAtrDist, ignore: true, opts: {} }
     ];
+    if (T.allowStale) passes.push({ d: T.maxAtrDist, ignore: true, opts: { allowStale: true } });
     for (const p of passes) {
-      const zs = this._findNearbyZones(tf, cls, price, currentAtr, trend, p.d, p.ignore);
+      let zs = this._findNearbyZones(tf, cls, price, currentAtr, trend, p.d, p.ignore);
+      // AI AGENT: trend filter (UP me sirf BUY zone, DOWN me sirf SELL zone)
+      if (T.trendAlign && trend && trend.trend && trend.trend !== 'sideways') {
+        zs = zs.filter(z => (z.type === 'demand') === (trend.trend === 'up'));
+      }
+      // AI AGENT: fresh-only mode
+      if (T.freshOnly) zs = zs.filter(z => z.fresh);
       // TREND RULE: UP me sirf BUY (demand) zone, DOWN me sirf SELL (supply) zone
       lastZones = zs; lastNote = this._nearbyNote;
       if (!zs.length) continue;
@@ -586,7 +884,9 @@ class DSEngine {
         ? 'Market target paar kar chuki — advance zone ka wait'
         : pick.behindCount
         ? 'Zone entry cross kar chuka — advance zone ka wait'
-        : 'Trade Score ' + (pick.lowScore || 0) + ' < 5 — naya fresh zone ka wait';
+        : pick.wideCount
+        ? 'AI: Zone bahut wide (SL risk) — chhote zone ka wait'
+        : 'Trade Score ' + (pick.lowScore || 0) + ' < ' + (T.minScore || 5) + ' — naya fresh zone ka wait';
       allResults[tf] = this._noResult(tf, reason, price, trend, atr);
       return;
     }
@@ -613,41 +913,41 @@ class DSEngine {
 
   _track(s, p) {
     const isBuy = s.direction === 'BUY';
-    // PDF (Trade Setup/Entry types): entry tab tak arm nahi jab tak price khud zone ke andar na aa jaye
-    if (!s.armed && (isBuy ? p <= s.proximal : p >= s.proximal)) {
-      s.armed = true;
-      if (s.status === 'WAITING') s.status = 'ARMED';
-    }
-    // market entry ke pass aaya → ENTRY likh do (0.1 ATR andar): BUY me neeche se, SELL me upar se
-    const near = s.entryNear != null ? s.entryNear : Math.abs(s.entry - s.stopLoss) * 0.08;
-    const nearEntry = isBuy ? p <= s.entry + near : p >= s.entry - near;
-    if (nearEntry && (s.status === 'WAITING' || s.status === 'ARMED')) s.status = 'ENTRY_TRIGGERED';
-    if (isBuy) {
-      if (p >= s.target) s.status = 'TARGET_HIT';
-      else if (p <= s.stopLoss) s.status = 'STOP_LOSS_HIT';
-      else if (p <= s.distal) s.status = 'INVALIDATED';
-      else if (s.armed && p >= s.entry && (s.status === 'WAITING' || s.status === 'ARMED')) s.status = 'ENTRY_TRIGGERED';
-    } else {
-      if (p <= s.target) s.status = 'TARGET_HIT';
-      else if (p >= s.stopLoss) s.status = 'STOP_LOSS_HIT';
-      else if (p >= s.distal) s.status = 'INVALIDATED';
-      else if (s.armed && p <= s.entry && (s.status === 'WAITING' || s.status === 'ARMED')) s.status = 'ENTRY_TRIGGERED';
-    }
-    // ENTRY REVISIT RULE: entry mil chuki, price door gayi aur phir DOOSRI baar entry par aayi
-    // aur SL/Target nahi mila → wo zone khatam (invalidate), agla zone pick hoga
-    if (s.status === 'ENTRY_TRIGGERED') {
-      if (!s.entryVisits) { s.entryVisits = 1; s._awayFromEntry = false; }
-      else {
-        const risk = Math.abs(s.entry - s.stopLoss) || 1;
-        const awayD = Math.max(risk * 0.3, (s.entryNear || 0) * 2);
-        if (isBuy ? p >= s.entry + awayD : p <= s.entry - awayD) s._awayFromEntry = true;
-        if (s._awayFromEntry && (isBuy ? p <= s.entry : p >= s.entry)) {
-          s.entryVisits = 2;
+    const reached = isBuy ? p <= s.entry : p >= s.entry;
+    // ENTRY — FIRST TOUCH: price proximal (entry line) par aaye; sirf session
+    // 09:15–15:15 ke andar (unlimited trades — jitne bane utne)
+    if (s.status === 'WAITING' || s.status === 'ARMED') {
+      if (reached) {
+        if (!s.armed) { s.armed = true; if (s.status === 'WAITING') s.status = 'ARMED'; }
+        if (this._entriesToday() >= this.maxTradesPerDay) {
           s.status = 'INVALIDATED';
-          s.abandonReason = 'Entry doosri baar (SL/Target nahi mila) — zone chhoda, agla zone active';
+          s.abandonReason = 'Aaj max trades ho gaye (' + this.maxTradesPerDay + '/day) — ye setup band';
+        } else if (this._session() === 'open') {
+          s.status = 'ENTRY_TRIGGERED';
+          this._markEntryLogged(s);
         }
+        // session band ho to ARMED rehta hai — 09:15 par apne aap entry
+      } else if (isBuy ? p >= s.target : p <= s.target) {
+        // ENTRY NAHILI + market target paar — purana setup khatam, naye
+        // zone ko mauka (analyze me _findNextZone turant naya zone dhundega)
+        s.status = 'INVALIDATED';
+        s.abandonReason = 'Entry nahi mili, market target paar — naya zone wait';
       }
     }
+    // EXIT — sirf ENTRY ke baad; SL PEHLE check (same candle me SL+target
+    // dono touch ho to → SL, conservative). SL = distal ∓ 0.10×ATR(14)
+    // (yahi "zone invalid hone par exit" hai)
+    if (s.status === 'ENTRY_TRIGGERED') {
+      if (isBuy) {
+        if (p <= s.stopLoss) s.status = 'STOP_LOSS_HIT';
+        else if (p >= s.target) s.status = 'TARGET_HIT';
+      } else {
+        if (p >= s.stopLoss) s.status = 'STOP_LOSS_HIT';
+        else if (p <= s.target) s.status = 'TARGET_HIT';
+      }
+    }
+    // ENTRY KE BAAD setup tab tak active rahega jab tak SL ya target hit
+    // na ho — price kitni bhi baar entry ke aas-paas jaaye, setup nahi hatega
     s.price = p; s.zoneDist = Math.abs(p - s.proximal);
     s.pnl = isBuy ? p - s.entry : s.entry - p;
   }
@@ -661,9 +961,30 @@ class DSEngine {
     return c;
   }
 
+  // 15:15 EOD SQUARE-OFF: session khatam hi exit hai — entry ho chuki setups
+  // SQUARE_OFF se band, sirf waiting/armed setups (trade hua hi nahi) drop
+  _eodSquareOff() {
+    if (this._session(Date.now()) !== 'post') return false;
+    let changed = false;
+    for (const tf of Object.keys(this.activeByTF)) {
+      const s = this.activeByTF[tf];
+      if (!s) continue;
+      if (this._isActive(s)) {
+        if (s.status === 'ENTRY_TRIGGERED') {
+          s.status = 'SQUARE_OFF';
+          s.exitReason = '15:15 EOD square-off';
+          this._recordHit(tf, s, 'SQUARE_OFF');
+        }
+        changed = true;
+      }
+      this.activeByTF[tf] = null;
+    }
+    return changed;
+  }
+
   trackTick(ltp) {
     if (!ltp || ltp <= 0) return false;
-    let zoneChanged = false;
+    let zoneChanged = this._eodSquareOff();
     for (const tf of Object.keys(this.activeByTF)) {
       const existing = this.activeByTF[tf];
       if (!existing || !this._isActive(existing)) continue;
@@ -674,10 +995,14 @@ class DSEngine {
         zoneChanged = true;
       }
     }
+    if (zoneChanged) this._saveActive();
     return zoneChanged;
   }
 
-  _isActive(s) { return s && s.status !== 'TARGET_HIT' && s.status !== 'STOP_LOSS_HIT' && s.status !== 'INVALIDATED'; }
+  _isActive(s) {
+    return s && s.status !== 'TARGET_HIT' && s.status !== 'STOP_LOSS_HIT' &&
+      s.status !== 'INVALIDATED' && s.status !== 'SQUARE_OFF';
+  }
 
   _zoneStats(tf) {
     const zs = this.allZonesByTF[tf] || [];

@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const nodemailer = require('nodemailer');
 const CandleManager = require('./candle-manager');
+const mi = require('./market-intel');
 
 const app = express();
 app.use(express.json());
@@ -35,6 +36,26 @@ const INSTRUMENTS = {
   'WIPRO':     { exchange: 'NSE', segment: 'CASH', symbol: 'WIPRO', isIndex: false, yahoo: 'WIPRO%2ENS' },
   'TATAMOTORS':{ exchange: 'NSE', segment: 'CASH', symbol: 'TATAMOTORS', isIndex: false, yahoo: 'TATAMOTORS%2ENS' }
 };
+
+// Koi bhi NSE stock (Nifty500/Nifty50 search) — list me na ho to dynamically bana do.
+// Groww cash chart + Yahoo (.NS) dono isi se chalte hain.
+function getInstrument(sym) {
+  const k = String(sym || '').toUpperCase().replace(/[^A-Z0-9&-]/g, '');
+  if (!k) return null;
+  if (INSTRUMENTS[k]) return INSTRUMENTS[k];
+  if (!/^[A-Z][A-Z0-9&-]{0,19}$/.test(k)) return null;
+  return { exchange: 'NSE', segment: 'CASH', symbol: k, isIndex: false, yahoo: encodeURIComponent(k) + '.NS' };
+}
+
+// D/W/M ke liye poora itihaas chahiye (zones ke liye ~3-10 saal), intraday pehle jaisa
+function minsForTf(tf, mktOpen) {
+  if (tf >= 43200) return 43200 * 130;    // ~10 saal monthly
+  if (tf >= 10080) return 10080 * 530;    // ~10 saal weekly
+  if (tf >= 1440) return 1440 * 1400;     // ~1400 din daily
+  return mktOpen
+    ? (tf <= 1 ? 200 : tf <= 3 ? 1440 : tf <= 5 ? 1440 : tf <= 15 ? 2880 : 4320)
+    : 4320;
+}
 
 const mgrs = {};
 const pollers = {};
@@ -307,12 +328,17 @@ function getMgr(sym, tf) {
 
 async function fetchCandlesYahoo(inst, tfMin, range) {
   try {
-    const interval = tfMin <= 1 ? '1m' : tfMin <= 5 ? '5m' : tfMin <= 15 ? '15m' : '1d';
-    const rangeMap = { '1m': '1d', '5m': '5d', '15m': '1mo', '1d': '1mo' };
-    const r = rangeMap[interval] || '5d';
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${inst.yahoo}?interval=${interval}&range=${r}`;
+    // 3m ka koi Yahoo interval nahi — 1m lao aur 3m me AGGREGATE karo
+    // (pehle 3m→'5m' map hota tha → 5m candles 3m manager me setHistory hote
+    // the aur bucket mismatch se live candle wipe ho jate the)
+    // D/W/M = seedha Yahoo ke apne interval (1d/1wk/1mo), koi aggregation nahi
+    const yInt = tfMin >= 43200 ? '1mo' : tfMin >= 10080 ? '1wk' : tfMin >= 1440 ? '1d'
+      : tfMin <= 1 ? '1m' : tfMin <= 3 ? '1m' : tfMin <= 5 ? '5m' : tfMin <= 15 ? '15m' : '30m';
+    const rangeMap = { '1m': '1d', '5m': '5d', '15m': '1mo', '30m': '1mo', '1d': '5y', '1wk': '10y', '1mo': '10y' };
+    const r = rangeMap[yInt] || '5d';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${inst.yahoo}?interval=${yInt}&range=${r}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
+    const timer = setTimeout(() => controller.abort(), 10000);
     const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) return [];
@@ -322,7 +348,7 @@ async function fetchCandlesYahoo(inst, tfMin, range) {
     const ts = result.timestamp || [];
     const q = result.indicators && result.indicators.quote && result.indicators.quote[0];
     if (!q || !ts.length) return [];
-    const candles = [];
+    let candles = [];
     for (let i = 0; i < ts.length; i++) {
       if (q.open[i] != null && q.close[i] != null) {
         candles.push({
@@ -332,37 +358,148 @@ async function fetchCandlesYahoo(inst, tfMin, range) {
         });
       }
     }
+    // 1m → requested TF aggregation (3m/2m/4m... whatever)
+    if (yInt === '1m' && tfMin > 1) {
+      const bucketMs = tfMin * 60000;
+      const byBucket = {};
+      for (const c of candles) {
+        const k = Math.floor(c.time / bucketMs) * bucketMs;
+        const b = byBucket[k];
+        if (!b) byBucket[k] = { time: k, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume };
+        else {
+          b.high = Math.max(b.high, c.high); b.low = Math.min(b.low, c.low);
+          b.close = c.close; b.volume += c.volume || 0;
+        }
+      }
+      candles = Object.keys(byBucket).map(k => byBucket[k]).sort((a, b) => a.time - b.time);
+    }
     return candles;
   } catch (e) { console.log(`[YAHOO] ${inst.symbol} ERR: ${e.message}`); return []; }
 }
 
-async function fetchCandles(inst, tfMin, minsBack) {
-  try {
-    const now = Date.now(), start = now - minsBack * 60000;
-    const url = `${GROWW}/charting_service/v2/chart/exchange/${inst.exchange}/segment/${inst.segment}/${inst.symbol}?startTimeInMillis=${start}&endTimeInMillis=${now}&intervalInMinutes=${tfMin}`;
-    const headers = {
-      'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Referer': 'https://groww.in/',
-      'Origin': 'https://groww.in',
-      'Accept-Language': 'en-US,en;q=0.9'
-    };
-    if (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') {
-      headers['Authorization'] = 'Bearer ' + API_KEY;
-      headers['X-API-KEY'] = API_KEY;
+// ── Candle fetch cache + in-flight dedup ──
+// Har 2s polling + WS + HTTP sab ek hi source ko hit karte the → parallel
+// requests stack → timeout/abort flood. Ab: ek symbol+tf par ek hi request
+// chalti hai (in-flight), aur result thodi der cache hota hai.
+const _candleCache = {};    // key -> { at, data }
+const _candleInflight = {}; // key -> Promise
+function _cacheTtl(tfMin) {
+  // chhota TF = fresh chahiye, bada TF = thodi der purana bhi chalega
+  if (tfMin >= 1440) return 60000;        // D/W/M — din me ek baar badalta hai
+  if (tfMin <= 1) return 2500;
+  if (tfMin <= 3) return 4000;
+  if (tfMin <= 5) return 6000;
+  return 12000;
+}
+
+// fetchCandles ke saath data ka "fetched-at" timestamp — CandleManager isse
+// decide karta hai ki live tick fresh hai ya source close (rollback na ho)
+async function fetchCandlesWithAt(inst, tfMin, minsBack, allowDemo) {
+  const list = await fetchCandles(inst, tfMin, minsBack, allowDemo);
+  const key = inst.symbol + '|' + tfMin + '|' + minsBack;
+  const hit = _candleCache[key];
+  return { list, at: (hit && hit.at) || 0 };
+}
+
+// ── Offline demo candles (Groww+Yahoo dono down ho tab chart blank na dikhe) ──
+const DEMO_BASE = { NIFTY: 22750, BANKNIFTY: 48500, SENSEX: 75200, FINNIFTY: 21500,
+  RELIANCE: 2850, TCS: 3400, INFY: 1550, HDFCBANK: 1650, SBIN: 820, ICICIBANK: 1200,
+  ADANIENT: 2400, BAJFINANCE: 6800, ITC: 420, WIPRO: 290, TATAMOTORS: 720 };
+function genDemoCandles(sym, tfMin, minsBack) {
+  const base = DEMO_BASE[sym] || (INSTRUMENTS[sym] && INSTRUMENTS[sym].isIndex ? 22750 : 1000);
+  const n = Math.min(500, Math.max(30, Math.floor(minsBack / tfMin)));
+  const bucketMs = tfMin * 60000;
+  const now = Date.now();
+  const start = Math.floor((now - minsBack * 60000) / bucketMs) * bucketMs;
+  let price = base;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = start + i * bucketMs;
+    if (t > now) break;
+    // simple random walk around base
+    const drift = (Math.random() - 0.5) * base * 0.0015;
+    const open = price;
+    price = Math.max(1, price + drift);
+    const close = price;
+    const high = Math.max(open, close) * (1 + Math.random() * 0.0008);
+    const low = Math.min(open, close) * (1 - Math.random() * 0.0008);
+    out.push({ time: t, open: +open.toFixed(2), high: +high.toFixed(2), low: +low.toFixed(2), close: +close.toFixed(2), volume: Math.floor(50000 + Math.random() * 200000) });
+  }
+  return out;
+}
+
+async function fetchCandles(inst, tfMin, minsBack, allowDemo) {
+  const key = inst.symbol + '|' + tfMin + '|' + minsBack;
+  const ttl = _cacheTtl(tfMin);
+  const hit = _candleCache[key];
+  // cache fresh ho to seedha wapas (request mat bhejo)
+  if (hit && Date.now() - hit.at < ttl) return hit.data;
+  // koi aur isi key par request chala raha hai to usi ka result wait karo
+  if (_candleInflight[key]) return await _candleInflight[key];
+
+  _candleInflight[key] = (async () => {
+    try {
+      const now = Date.now(), start = now - minsBack * 60000;
+      const url = `${GROWW}/charting_service/v2/chart/exchange/${inst.exchange}/segment/${inst.segment}/${inst.symbol}?startTimeInMillis=${start}&endTimeInMillis=${now}&intervalInMinutes=${tfMin}`;
+      const headers = {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://groww.in/',
+        'Origin': 'https://groww.in',
+        'Accept-Language': 'en-US,en;q=0.9'
+      };
+      if (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') {
+        headers['Authorization'] = 'Bearer ' + API_KEY;
+        headers['X-API-KEY'] = API_KEY;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      let raw = [];
+      try {
+        const r = await fetch(url, { headers, signal: controller.signal });
+        clearTimeout(timer);
+        if (r.ok) {
+          const d = await r.json();
+          raw = d.candles || [];
+        } else {
+          console.log(`[GROWW] ${inst.symbol} ${tfMin}m HTTP ${r.status}, falling back to Yahoo`);
+        }
+      } catch (e) {
+        clearTimeout(timer);
+        // timeout/abort = expected jab Groww bina key ke hang kare — Yahoo par jao
+        console.log(`[GROWW] ${inst.symbol} ${tfMin}m ${e.message}, falling back to Yahoo`);
+      }
+      if (!raw.length) {
+        // Yahoo already returns {time,open,high,low,close,volume} objects — don't re-map as arrays
+        const yc = await fetchCandlesYahoo(inst, tfMin, minsBack);
+        if (yc.length) {
+          _candleCache[key] = { at: Date.now(), data: yc };
+          return yc;
+        }
+        // both sources failed → synthetic demo candles so chart never stays blank
+        // (auto-bot/agent ke liye allowDemo=false — fake candles par trade mat karo)
+        if (allowDemo !== false) {
+          const demo = genDemoCandles(inst.symbol, tfMin, minsBack);
+          if (demo.length) {
+            console.log(`[DEMO] ${inst.symbol} ${tfMin}m: using synthetic candles (offline)`);
+            _candleCache[key] = { at: Date.now(), data: demo };
+            return demo;
+          }
+        }
+        raw = [];
+      }
+      const candles = raw.map(c => ({
+        time: c[0] * 1000, open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5] || 0
+      }));
+      // empty result ko zyada der cache mat karo (agle poll me retry)
+      _candleCache[key] = { at: Date.now(), data: candles };
+      if (!candles.length) delete _candleCache[key];
+      return candles;
+    } finally {
+      delete _candleInflight[key];
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-    const r = await fetch(url, { headers, signal: controller.signal });
-    clearTimeout(timer);
-    if (!r.ok) { console.log(`[GROWW] ${inst.symbol} ${tfMin}m HTTP ${r.status}, falling back to Yahoo`); return await fetchCandlesYahoo(inst, tfMin, minsBack); }
-    const d = await r.json();
-    const raw = d.candles || [];
-    if (!raw.length) { console.log(`[GROWW] ${inst.symbol} no candles, falling back to Yahoo`); return await fetchCandlesYahoo(inst, tfMin, minsBack); }
-    return raw.map(c => ({
-      time: c[0] * 1000, open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5] || 0
-    }));
-  } catch (e) { console.log(`[GROWW] ${inst.symbol} ERR: ${e.message}, falling back to Yahoo`); return await fetchCandlesYahoo(inst, tfMin, minsBack); }
+  })();
+  return await _candleInflight[key];
 }
 
 function tick(sym, ltp, ts) {
@@ -371,6 +508,9 @@ function tick(sym, ltp, ts) {
   Object.keys(mgrs).forEach(k => {
     if (k.startsWith(sym + '_')) {
       const tf = parseInt(k.split('_')[1]);
+      // D/W/M bucket exchange-calendar se match nahi karta (epoch floor) — tick se
+      // live candle spoil/duplicate hoti hai. Wo sirf periodic source re-sync se chalti hai.
+      if (tf >= 1440) return;
       const r = mgrs[k].update(ltp, ts);
       if (r && r.candle) broadcast({ type: 'candle', sym, tf, ltp, ts, candle: r.candle });
     }
@@ -378,10 +518,40 @@ function tick(sym, ltp, ts) {
   broadcast({ type: 'tick', sym, ltp, ts });
 }
 
+// ── FAST LIVE LTP (Groww real-time index quote) ──
+// Purane system me LTP = 3m candle close (chart API) — wo 10-60s delayed
+// hota tha, isliye candle/entry/SL sab late update hote the (loss ka main
+// reason). Ye endpoint Groww ka live LTP deta hai — 1s me tick aata hai.
+const _ltpCache = {}; // sym -> { at, v }
+async function fetchLiveLTP(inst) {
+  if (!inst.isIndex) return 0;   // stocks ke liye chart close hi fallback
+  const hit = _ltpCache[inst.symbol];
+  if (hit && Date.now() - hit.at < 1000) return hit.v;
+  try {
+    const url = `${GROWW}/stocks_data/v1/accord_points/exchange/${inst.exchange}/segment/CASH/latest_indices_ohlc/${inst.symbol}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://groww.in/', 'Origin': 'https://groww.in'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!r.ok) return 0;
+    const j = await r.json();
+    const v = j.value || j.indexIndicativePrice || j.ltp || 0;
+    if (v > 0) { _ltpCache[inst.symbol] = { at: Date.now(), v }; return v; }
+  } catch (e) {}
+  return 0;
+}
+
 function startPolling(sym) {
   if (pollers[sym]) return;
-  const inst = INSTRUMENTS[sym];
+  const inst = getInstrument(sym);
   if (!inst) return;
+  let lastHistSync = 0, lastHtfSync = 0;
   const poll = async () => {
     if (!isMarketOpen()) {
       broadcast({ type: 'marketStatus', open: false, day: isMarketDay() });
@@ -389,13 +559,253 @@ function startPolling(sym) {
       return;
     }
     try {
-      const c = await fetchCandles(inst, 3, 1440);
-      if (c.length) tick(sym, c[c.length - 1].close, c[c.length - 1].time);
+      // 1) FAST path: real-time LTP se live candle tick karo (1s me fresh)
+      let ltp = await fetchLiveLTP(inst);
+      // 2) fallback: 3m chart close (pehle ye hi single source tha)
+      if (!ltp) {
+        const c = await fetchCandles(inst, 3, 1440);
+        if (c.length) ltp = c[c.length - 1].close;
+      }
+      if (ltp) tick(sym, ltp, Date.now());
+
+      // 3) Har 8s: 3m history sync (completed candles correct rahen, live
+      //    candle ka close fresher ho to rollback nahi hoga — srcAt se)
+      if (Date.now() - lastHistSync > 8000) {
+        lastHistSync = Date.now();
+        const { list, at } = await fetchCandlesWithAt(inst, 3, 1440);
+        if (list.length) getMgr(sym, 3).setHistory(list, at);
+      }
+      // 4) Har 60s: D/W/M source re-sync (tick manager ko skip karta hai —
+      //    exchange-calendar mismatch se bucket spoil na ho; cache TTL bhi 60s)
+      if (Date.now() - lastHtfSync > 60000) {
+        lastHtfSync = Date.now();
+        await Promise.all([1440, 10080, 43200].map(async tf => {
+          try {
+            const { list, at } = await fetchCandlesWithAt(inst, tf, minsForTf(tf, true));
+            if (!list.length) return;
+            getMgr(sym, tf).setHistory(list, at);
+            broadcast({ type: 'candles', sym, tf, candles: getMgr(sym, tf).get() });
+          } catch (e) {}
+        }));
+      }
     } catch (e) {}
-    pollers[sym] = setTimeout(poll, 2000);
+    pollers[sym] = setTimeout(poll, 1000);
   };
   pollers[sym] = setTimeout(poll, 0);
 }
+
+// ── LIVE ENTRY SCANNER (Nifty500/50): D/W/M alag-alag tabs · sirf wahi stock jiski
+//    LIVE LTP demand zone ke andar ho (entry zaroori nahi ATL par — beech ka best zone) ·
+//    row me all-time high + all-time low + beech ka best demand zone E/SL/T ·
+//    SECTOR GATE: sector achha perform kare tabhi milega (avg %chg ≥ 0 us TF par).
+//    Har 30s me 10 stock batch (D+W+M candles) → poora list ~7 min me ek baar.
+const DS_LIST = require(path.join(__dirname, 'public', 'symbols.js'));
+const DS_SEC = require(path.join(__dirname, 'public', 'sectors.js'));
+const IND = require(path.join(__dirname, 'public', 'indicator.js'));
+const _scanSyms = DS_LIST.filter(x => x && x.s && !/NIFTY|SENSEX/.test(x.s));
+let _scanIdx = 0, _scanBusy = false;
+const _stockScan = {};   // sym -> { sec, ltp, ath, atl, at, zones{1D/1W/1M}, perf{1D/1W/1M} }
+const SCAN_TTL = 25 * 60 * 1000;
+const BB_TFS = [{ k: '1D', tf: 1440 }, { k: '1W', tf: 10080 }, { k: '1M', tf: 43200 }];
+
+// 1-candle % change (daily = din ka, weekly = hafte ka, monthly = mahine ka)
+function _pctChg(list) {
+  if (!list || list.length < 2) return 0;
+  const last = list[list.length - 1].close, prev = list[list.length - 2].close;
+  return prev > 0 ? ((last - prev) / prev) * 100 : 0;
+}
+
+// sector performance per TF — scanned stocks ke avg %chg se
+function _sectorPerf(tf) {
+  const now = Date.now(), sums = {}, cnts = {};
+  for (const s of Object.values(_stockScan)) {
+    if (now - s.at > SCAN_TTL) continue;
+    const p = s.perf ? s.perf[tf] : null;
+    if (p == null || !s.sec) continue;
+    sums[s.sec] = (sums[s.sec] || 0) + p;
+    cnts[s.sec] = (cnts[s.sec] || 0) + 1;
+  }
+  const out = {};
+  for (const k in sums) out[k] = Math.round((sums[k] / cnts[k]) * 100) / 100;
+  return out;
+}
+
+async function _scanOne(ent) {
+  const inst = getInstrument(ent.s);
+  if (!inst || inst.isIndex) return;
+  const sec = DS_SEC[ent.s] || 'Others';
+  const zones = {}, perf = {};
+  let ltp = 0, ath = 0, atl = Infinity;
+  await Promise.all(BB_TFS.map(async ({ k, tf }) => {
+    try {
+      // allowDemo=false: fake demo candles (base ~1000) scanner me nahi — fail ho to skip
+      const { list } = await fetchCandlesWithAt(inst, tf, minsForTf(tf, true), false);
+      if (!list || list.length < 30) return;
+      const price = list[list.length - 1].close;
+      const lastLow = list[list.length - 1].low || price;   // candle ka low (touch check)
+      if (!(price > 0)) return;
+      ltp = price;
+      // ATH/ATL — har branch apni history se accumulate kare (W/M = lambi history);
+      // pehle khatam hone wale branch Infinity ko 0 na kare (race tha — L 0 aa raha tha)
+      for (const c of list) { if (c.high > ath) ath = c.high; if (c.low < atl) atl = c.low; }
+      perf[k] = _pctChg(list);
+      const cc = IND.CandleEngine.classifyAll(list);
+      const cl = cc.map(c => c.close);
+      const atrArr = IND.ATREngine.calculate(cc);
+      const t = IND.TrendEngine.analyze(cl, IND.TrendEngine.sma(cl), atrArr);
+      const atrv = atrArr[atrArr.length - 1] || 1;
+      const zl = [];
+      const det = IND.ZoneEngine.detect(cc, t.trend);   // trend filter: DOWN me demand nahi
+      IND.ZoneEngine.markFreshness(det, cc);
+      for (const z of det) {
+        if (z.type !== 'demand') continue;                        // sirf BUY (demand) zone
+        if (z.tested > 2 || z.authentic === false) continue;      // weak/non-auth skip
+        if (atrv > 0 && Math.abs(z.proximal - z.distal) / atrv > 1.5) continue;  // wide skip
+        const sc = IND.TradeScorer.score(z, t, price, atrv, null);
+        if (!sc.tradeable) continue;                              // score ≥ 5
+        const entry = z.proximal;
+        const sl = z.distal - atrv * 0.10;
+        const risk = Math.abs(entry - sl);
+        // TOUCH: live/candle price ENTRY (proximal) tak neeche aayi — ya LTP zone ke andar.
+        // `lastLow <= E` = is candle ne E tak fall kiya (price upar ho to high/E check galat tha).
+        // Zone ke neeche chala gaya = broken, skip. Zaroori nahi ATL par ho.
+        const inZone = price <= z.proximal && price >= z.distal;
+        const broken = price < z.distal;            // LTP zone ke neeche = toot gaya
+        const touched = !broken && (inZone || lastLow <= z.proximal);
+        if (!touched) continue;
+        const dist = (price - z.proximal) / atrv;   // ATR me doori (neg = zone ke andar)
+        // zone all-time high/low ke beech hi hona chahiye (ATL ≤ zone ≤ ATH);
+        // atl abhi accumulate hi hua ho to skip mat karo (race guard)
+        if (atl !== Infinity && ath > 0 && (z.distal < atl * 0.95 || z.proximal > ath)) continue;
+        // SL/TP already hit ho chuka = setup khatam — aisi entry kabhi add mat karo (fake nahi)
+        if (price <= sl || price >= entry + risk * 2) continue;
+        zl.push({ tf: k, proximal: z.proximal, distal: z.distal, fresh: !!z.fresh, tested: z.tested || 0,
+          score: sc.score, entry, sl, tgt: entry + risk * 2, zoneTime: z.zoneTime,
+          enter: inZone, touched, dist: Math.round(dist * 100) / 100 });
+      }
+      zl.sort((a, b) => ((b.enter ? 1 : 0) - (a.enter ? 1 : 0)) ||
+        (a.dist - b.dist) || (b.score - a.score));
+      zones[k] = zl.slice(0, 3);
+    } catch (e) {}
+  }));
+  if (atl === Infinity) atl = 0;
+  const has = ['1D', '1W', '1M'].some(k => zones[k] && zones[k].length);
+  if (ltp > 0) {
+    const prev = _stockScan[ent.s];
+    if (prev) {
+      // STICKY OLD ENTRY: purane zones sirf SL/TP hit (sweep) tak zinda hain — rescan par
+      // kabhi delete mat karo. Naye touch-zone sirf ADD hote hain (dedupe).
+      prev.ltp = ltp;
+      if (ath > 0) prev.ath = Math.max(prev.ath || 0, ath);
+      if (atl > 0) prev.atl = prev.atl > 0 ? Math.min(prev.atl, atl) : atl;
+      prev.at = Date.now();
+      prev.perf = Object.assign({}, prev.perf, perf);
+      for (const k of ['1D', '1W', '1M']) {
+        const old = prev.zones[k] || [];
+        const add = (zones[k] || []).filter(nz => !old.some(pz =>
+          pz.proximal === nz.proximal && pz.distal === nz.distal));
+        if (add.length) {
+          prev.zones[k] = old.concat(add).sort((a, b) =>
+            ((b.enter ? 1 : 0) - (a.enter ? 1 : 0)) ||
+            ((a.dist || 99) - (b.dist || 99)) || (b.score - a.score)).slice(0, 5);
+        }
+      }
+    } else if (has) {
+      _stockScan[ent.s] = { sym: ent.s, name: ent.n, sec, ltp, ath, atl, at: Date.now(), zones, perf };
+    }
+    // NOTE: "zone chhod diya" wale purane delete ko hata diya — hatana sirf SL/TP hit se
+  }
+}
+
+async function _scanBatch() {
+  if (_scanBusy) return;
+  _scanBusy = true;
+  try {
+    for (let i = 0; i < 10 && _scanIdx < _scanSyms.length; i++, _scanIdx++) {
+      try { await _scanOne(_scanSyms[_scanIdx]); } catch (e) {}
+    }
+    if (_scanIdx >= _scanSyms.length) _scanIdx = 0;
+  } finally { _scanBusy = false; }
+}
+setInterval(() => { _scanBatch().catch(() => {}); }, 30000);
+_scanBatch().catch(() => {});
+
+// ── SL/TP AUTO-REMOVE: list me jo stock pada hai, uska LTP zone ka SL ya target
+//    cross kare to usi zone ko hata do (stock ke saare zone khatam → stock hatao).
+//    Uski jagah doosra real stock apne aap top-8 me aa jayega — fake entry kabhi nahi.
+//    Har 15s me 10 stock ki rotation (3m close = cached, halka sweep).
+let _hitIdx = 0;
+async function _hitSweep() {
+  const syms = Object.keys(_stockScan);
+  if (!syms.length) return;
+  const n = syms.length;
+  const batch = [];
+  for (let i = 0; i < 10 && i < n; i++) batch.push(syms[(_hitIdx + i) % n]);
+  _hitIdx = (_hitIdx + 10) % n;
+  for (const sym of batch) {
+    try {
+      const e = _stockScan[sym];
+      if (!e) continue;
+      const inst = getInstrument(sym);
+      if (!inst) continue;
+      const c = await fetchCandles(inst, 3, 1440);
+      const ltp = c.length ? c[c.length - 1].close : 0;
+      if (!(ltp > 0)) continue;
+      e.ltp = ltp;                       // LTP bhi fresh karte jao
+      let zoneRemoved = false;
+      for (const tf of ['1D', '1W', '1M']) {
+        const zs = e.zones[tf];
+        if (!zs || !zs.length) continue;
+        const keep = zs.filter(z => ltp > z.sl && ltp < z.tgt);   // hit → zone out
+        if (keep.length !== zs.length) { zoneRemoved = true; e.zones[tf] = keep; }
+      }
+      const hasAny = ['1D', '1W', '1M'].some(tf => (e.zones[tf] || []).length);
+      if (!hasAny) delete _stockScan[sym];       // saare hit = stock list se bahar
+      else if (zoneRemoved) e.at = Date.now();   // partial removal — list fresh
+    } catch (e) {}
+  }
+}
+setInterval(() => { if (isMarketOpen()) _hitSweep().catch(() => {}); }, 15000);
+
+// response: D/W/M alag-alag tabs + sector summary (gate: sector avg %chg ≥ 0).
+// STICKY TOP-8: jo stock ek baar list me aa gaya wo tab tak rahe jab tak uska SL/TP
+// hit na ho (sweep usi ko hatata hai). Slot khali hote hi naya best auto add — cap 8.
+const _shown = { '1D': [], '1W': [], '1M': [] };
+app.get('/api/scan/bestbuy', (req, res) => {
+  const now = Date.now();
+  const sectors = { '1D': _sectorPerf('1D'), '1W': _sectorPerf('1W'), '1M': _sectorPerf('1M') };
+  const tabs = { '1D': [], '1W': [], '1M': [] };
+  const rank = (a, b) => ((b.enter ? 1 : 0) - (a.enter ? 1 : 0)) ||
+    ((a.zone.dist || 99) - (b.zone.dist || 99)) ||
+    (b.zone.score - a.zone.score) ||
+    ((b.zone.fresh ? 1 : 0) - (a.zone.fresh ? 1 : 0)) ||
+    ((b.secPct == null ? -99 : b.secPct) - (a.secPct == null ? -99 : a.secPct));
+  for (const s of Object.values(_stockScan)) {
+    if (now - s.at > SCAN_TTL) continue;
+    for (const k of ['1D', '1W', '1M']) {
+      const zs = (s.zones && s.zones[k]) || [];
+      if (!zs.length) continue;
+      const sp = sectors[k][s.sec];
+      if (sp != null && sp < 0) continue;   // SECTOR GATE: achha perform nahi → mat do
+      tabs[k].push({
+        sym: s.sym, name: s.name, sec: s.sec, secPct: sp == null ? null : sp,
+        ltp: s.ltp, ath: s.ath, atl: s.atl, at: s.at,
+        enter: zs.some(z => z.enter), touched: zs.some(z => z.touched),
+        zone: zs[0], zones: zs
+      });
+    }
+  }
+  for (const k of ['1D', '1W', '1M']) {
+    const all = tabs[k].sort(rank);
+    const pool = new Map(all.map(x => [x.sym, x]));
+    const pinned = _shown[k].filter(s => pool.has(s)).map(s => pool.get(s));  // purane (hit nahi hue)
+    const rest = all.filter(x => !_shown[k].includes(x.sym));                  // naye best
+    const chosen = pinned.concat(rest).slice(0, 8).sort(rank);                 // cap 8, order = rank
+    _shown[k] = chosen.map(x => x.sym);                                        // hit = pool se gaya → agli baar nahi
+    tabs[k] = chosen;
+  }
+  res.json({ ok: true, tabs, sectors, symbols: _scanSyms.length, pos: _scanIdx, at: now });
+});
 
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: false }));
 
@@ -527,15 +937,13 @@ app.get('/api/chain/:sym', async (req, res) => {
 app.get('/api/candles/:sym/:tf', async (req, res) => {
   console.log(`[HTTP] Request: ${req.params.sym} ${req.params.tf}m`);
   try {
-    const inst = INSTRUMENTS[req.params.sym];
+    const inst = getInstrument(req.params.sym);
     if (!inst) return res.json({ candles: [] });
     const tf = parseInt(req.params.tf) || 3;
     const mktOpen = isMarketOpen();
-    const mins = mktOpen
-      ? (tf <= 1 ? 200 : tf <= 3 ? 1440 : tf <= 5 ? 1440 : tf <= 15 ? 2880 : 4320)
-      : 4320;
-    const c = await fetchCandles(inst, tf, mins);
-    if (c.length) getMgr(req.params.sym, tf).setHistory(c);
+    const mins = minsForTf(tf, mktOpen);
+    const c = await fetchCandlesWithAt(inst, tf, mins);
+    if (c.list.length) getMgr(req.params.sym, tf).setHistory(c.list, c.at);
     const mgrCandles = getMgr(req.params.sym, tf).get();
     res.json({ candles: mgrCandles, mktOpen });
   } catch (e) { res.json({ candles: [], error: e.message }); }
@@ -551,36 +959,44 @@ wss.on('connection', ws => {
 
 function handleMsg(ws, data) {
   if (data.action === 'subscribe') {
-    const inst = INSTRUMENTS[data.symbol];
+    const inst = getInstrument(data.symbol);
     if (!inst) return;
     (async () => {
+      try {
       const reqTf = parseInt(data.interval) || 5;
       const mktOpen = isMarketOpen();
-      const mins = mktOpen
-        ? (reqTf <= 1 ? 200 : reqTf <= 3 ? 1440 : reqTf <= 5 ? 1440 : reqTf <= 15 ? 2880 : 4320)
-        : 4320;
-      const c = await fetchCandles(inst, reqTf, mins);
-      if (c.length) getMgr(data.symbol, reqTf).setHistory(c);
+      const mins = minsForTf(reqTf, mktOpen);
+      const c = await fetchCandlesWithAt(inst, reqTf, mins);
+      if (c.list.length) getMgr(data.symbol, reqTf).setHistory(c.list, c.at);
       const mgrCandles = getMgr(data.symbol, reqTf).get();
       console.log(`[WS] ${data.symbol} ${reqTf}m: ${mgrCandles.length} candles`);
       ws.send(JSON.stringify({ type: 'candles', sym: data.symbol, tf: reqTf, candles: mgrCandles }));
 
-      const bgTfs = [1,3,5,15,30].filter(t => t !== reqTf);
-      for (const tf of bgTfs) {
-        const bgMins = mktOpen
-          ? (tf <= 1 ? 200 : tf <= 3 ? 1440 : tf <= 5 ? 1440 : tf <= 15 ? 2880 : 4320)
-          : 4320;
-        const bc = await fetchCandles(inst, tf, bgMins);
-        if (bc.length) getMgr(data.symbol, tf).setHistory(bc);
-        const bgCandles = getMgr(data.symbol, tf).get();
-        ws.send(JSON.stringify({ type: 'candles', sym: data.symbol, tf, candles: bgCandles }));
-      }
+      // bg TFs PARALLEL — pehle sequential the, ek slow/hung fetch baaki sab
+      // block karta tha (12s timeout × 4 = 48s tak candles nahi milte the)
+      // D/W/M bhi yahan se — panel ke HTF demand zones ko candles chahiye
+      const bgTfs = [1,3,5,15,30,1440,10080,43200].filter(t => t !== reqTf);
+      await Promise.all(bgTfs.map(async tf => {
+        try {
+          const bgMins = minsForTf(tf, mktOpen);
+          const bc = await fetchCandlesWithAt(inst, tf, bgMins);
+          if (bc.list.length) getMgr(data.symbol, tf).setHistory(bc.list, bc.at);
+          const bgCandles = getMgr(data.symbol, tf).get();
+          ws.send(JSON.stringify({ type: 'candles', sym: data.symbol, tf, candles: bgCandles }));
+        } catch (e) { console.log('[WS] bg tf ' + tf + ' fail: ' + e.message); }
+      }));
 
-      if (isMarketOpen()) startPolling(data.symbol);
+      if (isMarketOpen()) {
+        startPolling(data.symbol);
+        // turant cached LTP tick bhejo — pehla live tick 1s wait mat karo
+        const pr = prices[data.symbol];
+        if (pr && pr.ltp) tick(data.symbol, pr.ltp, pr.ts || Date.now());
+      }
       else {
         const l1 = getMgr(data.symbol, 3).get();
         if (l1.length) tick(data.symbol, l1[l1.length - 1].close, l1[l1.length - 1].time);
       }
+      } catch (e) { console.log('[WS] subscribe fail: ' + e.message); }
     })();
   }
 }
@@ -590,12 +1006,15 @@ function broadcast(data) {
   clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg); });
 }
 
-// ── AUTO BOT: server pe 24/7 auto paper trading (3m zone, 1 lot) — laptop band ho tab bhi chalta hai ──
+// ── AUTO BOT: server pe 24/7 auto paper trading (3m+5m zone, 1 lot) — laptop band ho tab bhi chalta hai ──
 const createAutoBot = require('./auto-bot');
 const autoBot = createAutoBot({
   storeDir: STORE_DIR,
   symbol: 'NIFTY',
-  fetchCandles, getMgr, startPolling, isMarketOpen,
+  // auto-bot symbol string deta hai — yahan instrument object me badal ke bhejo
+  // allowDemo=false: API down ho to bot khali result le (fake candles par trade nahi)
+  fetchCandles: (sym, tfMin, minsBack) => fetchCandles(getInstrument(sym) || INSTRUMENTS.NIFTY, tfMin, minsBack, false),
+  getMgr, startPolling, isMarketOpen,
   getPrices: () => prices,
   chainQuote: async (symKey, strike, side) => {
     const st = await chainStructure(symKey, '');
@@ -609,6 +1028,48 @@ const autoBot = createAutoBot({
 });
 autoBot.start();
 app.get('/api/autopaper', (req, res) => res.json(autoBot.status()));
+
+// ── MARKET INTELLIGENCE (news + global + FII/DII + calendar + OI) ──
+try { if (autoBot.agent && autoBot.agent.setIntel) autoBot.agent.setIntel(mi); } catch (e) {}
+try { mi.startPolling(); } catch (e) {}
+const miRoute = fn => async (req, res) => { try { res.json(Object.assign({ ok: true }, await fn(req))); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } };
+app.get('/api/mi/overview', miRoute(() => mi.overview()));
+app.get('/api/mi/news', miRoute(req => mi.newsList(String(req.query.cat || 'market'), Math.min(30, parseInt(req.query.limit, 10) || 15))));
+app.get('/api/mi/calendar', miRoute(() => mi.calendar()));
+app.get('/api/mi/fiidii', miRoute(() => mi.fiidii()));
+app.get('/api/mi/why/:sym', miRoute(req => mi.whyMarket(req.params.sym)));
+app.get('/api/mi/oi/:sym', miRoute(req => mi.chainOI(String(req.params.sym).toUpperCase() === 'BANKNIFTY' ? 'BANKNIFTY' : 'NIFTY')));
+app.get('/api/mi/stock/:sym', miRoute(async req => ({ sym: req.params.sym, text: await mi.answer('stock:' + String(req.params.sym).toUpperCase().replace(/[^A-Z]/g, ''), '', {}) })));
+app.get('/api/mi/journal', miRoute(req => mi.journal(req.query.date || undefined).then(j => ({ journal: j }))));
+app.get('/api/mi/timeline', miRoute(async () => mi.timeline()));
+app.get('/api/mi/answer', miRoute(async req => { const q = String(req.query.q || '').slice(0, 300); const kind = mi.detect(q); return { kind, text: kind ? await mi.answer(kind, q, {}) : '' }; }));
+
+// ── AI AGENT: chat API (mic/text — app + localhost dono se) ──
+app.get('/api/agent', (req, res) => {
+  try {
+    const s = autoBot.status();
+    res.json({ ok: true, agent: autoBot.agent.status(), bot: { tf: s.tf, cash: s.cash, netPnl: s.netPnl, pos: s.pos.length, wins: s.wins, losses: s.losses, mktOpen: s.mktOpen, zones: s.actives || [] } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/agent/chat', async (req, res) => {
+  try {
+    const q = String((req.body && req.body.q) || '').slice(0, 300);
+    if (!q.trim()) return res.json({ ok: false, error: 'sawal khali hai' });
+    // user jo timeframe khol rakha hai (3m/5m/15m...) uske live zones ke saath bhejo
+    const ctx = autoBot.status();
+    const tfRaw = String((req.body && req.body.tf) || '').trim();
+    ctx.openTf = /^\d{1,2}$/.test(tfRaw) ? parseInt(tfRaw, 10) + 'm' : (/^\d{1,2}m$/.test(tfRaw) ? tfRaw : '');
+    const r = await autoBot.agent.replyAi(q, ctx);
+    res.json({ ok: true, q, a: r.a, act: r.act || '', tf: ctx.openTf || '', ts: Date.now() });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// ── chain screen (3m/5m zone auto-trade) ke ENTRY/EXIT events → AI agent ko dikhne ke liye ──
+app.post('/api/agent/autotrade', (req, res) => {
+  try {
+    const ev = autoBot.agent.logAutoTrade(req.body || {});
+    res.json({ ok: true, ev });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('');

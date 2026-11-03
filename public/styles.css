@@ -215,6 +215,10 @@ select:focus{outline:none;border-color:#00D09C}
 .ch-px{font-weight:700}
 .ch-px.ce{color:#00D09C;text-align:right}
 .ch-px.pe{color:#ff4757;text-align:left}
+.ch-row.sig .ch-px.buy{border-bottom:2.5px solid #59c2ff;text-shadow:0 0 8px rgba(89,196,255,.7);animation:buyPulse 1.6s infinite}
+@keyframes buyPulse{0%,100%{border-bottom-color:#59c2ff}50%{border-bottom-color:rgba(89,196,255,.25)}}
+.ch-botline{display:flex;justify-content:center;font-size:10px;font-weight:800;padding:4px 10px;letter-spacing:.5px;background:rgba(89,196,255,.12);border-bottom:2.5px solid #59c2ff;color:#59c2ff}
+.ch-botline.pe{background:rgba(255,71,87,.12);border-bottom-color:#ff4757;color:#ff6b81}
 .ch-k{font-weight:800;color:#d1d4dc;background:#14141e;border-radius:3px;padding:3px 0;font-size:11px}
 .ch-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 10px 8px}
 .ch-b{border:none;border-radius:4px;padding:9px 4px;font-size:11px;font-weight:800;cursor:pointer;letter-spacing:.3px;color:#fff}
@@ -262,6 +266,9 @@ select:focus{outline:none;border-color:#00D09C}
 .os-i{background:#0d0d14;border:1px solid #1a1a28;border-radius:6px;padding:8px;text-align:center}
 .os-i span{display:block;font-size:9px;color:#555;letter-spacing:.5px;margin-bottom:3px}
 .os-i b{font-size:14px;color:#00D09C}
+.os-i.os-loss b{color:#ff4757}
+.os-i.os-win b{color:#00D09C}
+.ch-plan{font-size:10px;color:#9adcff;letter-spacing:.3px}
 .os-lots{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px}
 .os-lots label{font-size:11px;color:#888;font-weight:700}
 .os-lots input{width:80px;background:#0d0d14;border:1px solid #252535;border-radius:4px;color:#d1d4dc;padding:8px;font-size:15px;text-align:center;font-weight:700}
@@ -291,3 +298,103 @@ select:focus{outline:none;border-color:#00D09C}
   select{font-size:13px;padding:6px 8px}
   .ltp-val{font-size:15px}
 }
+
+/* ── Symbol search (Nifty50/500 + koi bhi NSE) ── */
+.sym-search{position:relative;min-width:190px}
+.sym-search input{width:100%;background:#111a2e;border:1px solid #2b3a5e;border-radius:6px;color:#e8ecff;font-size:12px;font-weight:600;padding:6px 10px;letter-spacing:.5px;outline:none}
+.sym-search input:focus{border-color:#59c2ff}
+.sym-drop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:#0d1322;border:1px solid #2b3a5e;border-radius:8px;max-height:300px;overflow-y:auto;z-index:1000;box-shadow:0 10px 26px rgba(0,0,0,.6)}
+.sym-opt{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;font-size:12px;color:#c9d4ff;cursor:pointer;border-bottom:1px solid #161d33}
+.sym-opt:last-child{border-bottom:0}
+.sym-opt:hover,.sym-opt.sel{background:#1a2544}
+.sym-opt b{color:#59c2ff;letter-spacing:.5px}
+.sym-opt span{color:#7d89ad;font-size:11px;text-align:right}
+.sym-opt.sym-empty{color:#555;cursor:default}
+
+/* ── D/W/M (HTF) zone rows ── */
+.htf-zones .htf-row{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:4px 0;border-bottom:1px solid #1a1a2e;font-size:10px;font-family:monospace}
+.htf-zones .htf-tf{width:16px;font-weight:700;color:#9ab;letter-spacing:1px}
+.htf-zones .htf-tr{width:56px;font-weight:700;font-size:9px}
+.htf-zones .htf-d{color:#00D09C}
+.htf-zones .htf-s{color:#ff4757}
+
+/* ── AUTO BEST BUY box (demand zone hit) ── */
+.best-buy{margin-bottom:8px;padding:6px 8px;background:#0d1a14;border:1px solid #1e4d3a;border-radius:8px}
+.best-buy .tf-title{color:#00D09C}
+.bb-count{color:#00D09C;font-weight:700;margin-left:6px;letter-spacing:.5px}
+.bb-list{max-height:170px;overflow-y:auto}
+.bb-row{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:4px 3px;border-bottom:1px solid #14291f;font-size:10px;cursor:pointer;transition:background .15s}
+.bb-row:last-child{border-bottom:0}
+.bb-row:hover{background:#132b22}
+.bb-row.on{background:#16382a;outline:1px solid #00D09C55}
+.bb-row b{color:#00D09C;font-size:11px;letter-spacing:.5px}
+.bb-row .bb-n{color:#7d9c8d;flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bb-row .bb-ltp{color:#e8ecff;font-family:monospace}
+.bb-row .bb-z{color:#9adfc6;font-family:monospace;font-size:9px;width:100%}
+.bb-row .bb-z i{font-style:normal;color:#f1c40f}
+.bb-row .bb-f{font-style:normal;color:#0a0a0f;background:#00D09C;border-radius:3px;padding:0 4px;font-weight:700}
+
+/* ── D/W/M zone log (purane + naye E/SL/T) ── */
+.hz-head{display:flex;gap:8px;align-items:baseline;padding:5px 0 2px;font-size:10px;letter-spacing:1px;color:#9ab;border-bottom:1px solid #1a1a2e}
+.hz-head b{color:#c9d4ff;font-size:12px;width:12px}
+.hz-head .hz-cnt{margin-left:auto;color:#555;font-size:9px}
+.hz-line{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:3px 0 3px 8px;border-bottom:1px solid #141a2c;font-size:10px;font-family:monospace}
+.hz-line .hz-type{width:26px;font-weight:700}
+.hz-line.hz-d .hz-type,.hz-line.hz-d .hz-px{color:#00D09C}
+.hz-line.hz-s .hz-type,.hz-line.hz-s .hz-px{color:#ff4757}
+.hz-line .hz-sc{color:#f1c40f;font-size:9px}
+.hz-line .hz-est{color:#59c2ff;font-size:9px}
+.hz-line .hz-tag{background:#00D09C;color:#0a0a0f;border-radius:3px;padding:0 4px;font-size:8px;font-weight:700;letter-spacing:.5px}
+.hz-line.hz-old{opacity:.62}
+.hz-more{color:#444;font-size:9px;padding:3px 0 3px 8px}
+
+/* ── BEST DEMAND ZONE box: D/W/M tabs + sector/ATL/ENTER badges ── */
+.best-buy{margin-bottom:8px;padding:6px 8px;background:#0b1524;border:1px solid #24406b;border-radius:8px}
+.best-buy .tf-title{color:#9ab}
+.bb-count{color:#f1c40f;font-weight:700;margin-left:6px;font-size:8px;letter-spacing:1px}
+.bb-tabs{display:flex;gap:4px;margin:2px 0 6px}
+.bb-tab{flex:1;background:#101a2e;border:1px solid #2b3a5e;border-radius:6px;color:#7d89ad;font-size:9px;font-weight:700;letter-spacing:1px;padding:5px 2px;cursor:pointer;transition:all .15s}
+.bb-tab span{display:inline-block;margin-left:3px;padding:0 4px;background:#1a2544;border-radius:8px;color:#59c2ff;font-size:8px}
+.bb-tab:hover{border-color:#59c2ff;color:#c9d4ff}
+.bb-tab.on{background:#14384a;border-color:#00D09C;color:#00D09C}
+.bb-tab.on span{background:#00D09C;color:#0a0a0f}
+.bb-list{max-height:230px;overflow-y:auto}
+.bb-row{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:4px 3px;border-bottom:1px solid #16203a;font-size:10px;cursor:pointer;transition:background .15s}
+.bb-row:last-child{border-bottom:0}
+.bb-row:hover{background:#131f36}
+.bb-row.on{background:#16324a;outline:1px solid #59c2ff55}
+.bb-row b{color:#59c2ff;font-size:11px;letter-spacing:.5px}
+.bb-row .bb-sec{font-size:9px;font-weight:700}
+.bb-row .bb-ltp{color:#e8ecff;font-family:monospace;margin-left:auto}
+.bb-badge{font-style:normal;font-size:8px;font-weight:800;border-radius:3px;padding:1px 4px;letter-spacing:.5px}
+.bb-badge.bb-enter{background:#ff4757;color:#fff}
+.bb-badge.bb-atl{background:#f1c40f;color:#0a0a0f}
+.bb-row .bb-z{color:#9adfc6;font-family:monospace;font-size:9px;width:100%}
+.bb-row .bb-z i{font-style:normal;color:#f1c40f}
+.bb-row .bb-f{font-style:normal;color:#0a0a0f;background:#00D09C;border-radius:3px;padding:0 4px;font-weight:700}
+.bb-empty{color:#445;font-size:10px;padding:6px 2px;text-align:center}
+
+/* LIVE ENTRY list — stock name + green LIVE badge */
+.bb-row .bb-n{color:#6a7798;font-size:9px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bb-row .bb-badge.bb-enter{background:#00D09C;color:#04121a}
+
+.bb-badge.bb-touch{background:#f1c40f;color:#0a0a0f}
+
+.bb-badge.bb-near{background:#f1c40f;color:#0a0a0f}
+
+/* ENTRY TOUCHED rows — E/SL/T highlight + box-fit (jitna box utna) */
+.bb-prices{display:flex;gap:6px;align-items:baseline;width:100%;margin-top:2px}
+.bb-prices b{font-family:monospace;font-size:10px;padding:1px 5px;border-radius:3px;letter-spacing:.3px}
+.bb-prices .bb-e{background:#00D09C;color:#04121a;box-shadow:0 0 6px #00D09C55}
+.bb-prices .bb-s{background:#2a0f14;color:#ff4757;border:1px solid #ff475766}
+.bb-prices .bb-t{background:#0d1b33;color:#59c2ff;border:1px solid #59c2ff55}
+.bb-prices .bb-sec{margin-left:auto;font-size:8px;font-weight:700}
+.bb-hl{color:#56627e;font-size:8px;font-family:monospace;width:100%;margin-top:1px}
+.bb-list{max-height:210px}
+.bb-row{padding:4px 3px}
+
+/* TOUCH FIX: button/row par tap turant chale (300ms delay + zoom jump khatam) */
+.bb-tab,.bb-row,.best-buy{touch-action:manipulation}
+.bb-tab:focus{outline:none}
+.bb-tab:focus-visible{outline:1px solid #59c2ff;outline-offset:1px}
+.bb-row:focus{outline:none}
